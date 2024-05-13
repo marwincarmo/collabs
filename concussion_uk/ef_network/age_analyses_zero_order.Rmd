@@ -1,0 +1,996 @@
+---
+title: "NIHTB Age Analyses (Zero Order Correlations)"
+author: "Josue Rodriguez"
+date: ""
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = T, fig.width = 12, fig.height = 12)
+
+library(BGGM)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+source("helpers.R")
+```
+
+
+```{r include=FALSE}
+adhd_raw <- 
+  haven::read_sav("../NIHTBNetwork26Oct2020.sav") %>%
+  janitor::clean_names()
+adhd <- as.data.frame(adhd_raw)
+ef_vars <- c("dccs", "list_sort", "flank")
+```
+
+
+
+# CENTRALITY + EDGES
+
+
+
+
+
+
+
+## 7-10 (Yg1) vs 3-6 (Yg2)
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+d2_ef <- make_groups(adhd, grp = 2, vars = ef_vars)
+current <- d2_ef$current_age
+prior1 <-  d2_ef$prior_age1
+prior2 <-  d2_ef$prior_age2
+
+
+net_3_to_6 <- BGGM::pcor_to_cor(estimate(d2_ef$prior_age2, progress = FALSE))
+net_7_to_10 <- BGGM::pcor_to_cor(estimate(d2_ef$current_age, progress = FALSE))
+```
+
+```{r}
+net_current <- net_7_to_10
+net_prior2 <- net_3_to_6
+
+gs_diffs <- get_gs_diffs(net_current, net_prior2, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior2,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior2, data = current))
+
+plot_edges_diff(net_current, net_prior2, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+
+
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior2, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+## 11-13 vs 3-6
+
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+d3_ef <- make_groups(adhd, grp = 3, vars = ef_vars)
+current <- d3_ef$current_age
+
+net_11_to_13 <- BGGM:::pcor_to_cor(estimate(current, progress = FALSE))
+net_current <- net_11_to_13
+
+net_prior1 <- net_3_to_6
+net_prior2 <- net_7_to_10
+```
+
+```{r, echo = FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior1, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior1,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior1, data = current))
+
+plot_edges_diff(net_current, net_prior1, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior1, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+
+## 11-13 vs 7-10
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior2, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior2,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior2, data = current))
+
+plot_edges_diff(net_current, net_prior2, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior2, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+## 14-17 vs 7-10
+
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+d4_ef <- make_groups(adhd, grp = 4, vars = ef_vars)
+current <- d4_ef$current_age
+
+net_14_to_17 <- BGGM:::pcor_to_cor(estimate(current, progress = FALSE))
+net_current <- net_14_to_17
+net_prior1 <- net_7_to_10
+net_prior2 <- net_11_to_13
+```
+
+```{r, echo = FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior1, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior1,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior1, data = current))
+
+plot_edges_diff(net_current, net_prior1, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior1, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+## 14-17 vs 11-13
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior2, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior2,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior2, data = current))
+
+plot_edges_diff(net_current, net_prior2, data = current)  +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior2, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+## 18-39 vs 11-13
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+d5_ef <- make_groups(adhd, grp = 5, vars = ef_vars)
+current <- d5_ef$current_age
+
+net_18_to_39 <- BGGM:::pcor_to_cor(estimate(current, progress = FALSE))
+net_current <- net_18_to_39
+net_prior1 <- net_11_to_13
+net_prior2 <- net_14_to_17
+```
+
+```{r, echo = FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior1, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior1,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior1, data = current))
+
+plot_edges_diff(net_current, net_prior1, data = current)+
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior1, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+## 18-39 vs 14-17
+
+### Global Strength
+
+```{r, echo=FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior2, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior2,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior2, data = current))
+
+plot_edges_diff(net_current, net_prior2, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior2, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+## 40-64 vs 14-17
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+d6_ef <- make_groups(adhd, grp = 6, vars = ef_vars)
+current <- d6_ef$current_age
+
+net_40_to_64 <- BGGM:::pcor_to_cor(estimate(current, progress = FALSE))
+net_current <- net_40_to_64
+net_prior1 <- net_14_to_17
+net_prior2 <- net_18_to_39
+```
+
+```{r, echo = FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior1, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior1,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior1, data = current))
+
+plot_edges_diff(net_current, net_prior1, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior1, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+
+## 40-64 vs 18-39
+
+
+### Global Strength
+```{r, echo=FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior2, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior2,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior2, data = current))
+
+plot_edges_diff(net_current, net_prior2, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior2, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+
+## 65-85 vs 18-39
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+d7_ef <- make_groups(adhd, grp = 7, vars = ef_vars)
+current <- d7_ef$current_age
+
+net_65_to_85 <- BGGM::pcor_to_cor(estimate(current, progress = FALSE))
+net_current <- net_65_to_85
+net_prior1 <- net_18_to_39
+net_prior2 <- net_40_to_64
+```
+
+```{r, echo = FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior1, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior1,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior1, data = current))
+
+plot_edges_diff(net_current, net_prior1, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior1, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+
+
+
+
+
+
+## 65-85 vs 40-64
+
+### Global Strength
+
+
+```{r, echo=FALSE}
+gs_diffs <- get_gs_diffs(net_current, net_prior2, type = "cor", data = current)
+knitr::kable(gs_diffs)
+```
+
+```{r}
+obs <- gs_diffs["GS Diff", "Post.mean"]
+
+ppc <- ggm_compare_ppc(current,
+                       prior2,
+                       FUN = f_gs_cor,
+                       custom_obs = obs,
+                       iter = 10000,
+                       progress = FALSE)
+
+ppc
+
+plot(ppc)$plot_custom +
+  theme_minimal() +
+  guides(fill = FALSE) +
+  ylab("")
+```
+
+### Edge-wise
+
+```{r, echo=FALSE}
+knitr::kable(get_zero_order_diffs(net_current, net_prior2, data = current))
+
+plot_edges_diff(net_current, net_prior2, data = current) +
+  coord_flip() +
+  geom_hline(yintercept = c(-0.1, 0.1), col = "red", linetype = "dashed") +
+  theme_minimal()
+  ```
+
+### Expected Influence
+
+```{r, echo=FALSE, results="asis"}
+ei_df <- get_ei_diffs(net_current, net_prior2, type = "cor", data = current)
+for (i in 1:3) {
+  cat("**", names(ei_df[i]), "**", sep = "")
+  print(knitr::kable(ei_df[[i]]))
+}
+```
+
+
+
+
+# DESCRIPTIVES
+
+
+## ALL
+
+
+
+```{r}
+ef_all <- adhd[, ef_vars]
+
+net_all <- BGGM::pcor_to_cor(estimate(ef_all, progress = FALSE))
+
+desc_all <-  get_zero_order_diffs(net_all, net_all, data = ef_all, summary = TRUE)
+
+knitr::kable(desc_all[[1]])
+```
+
+
+## 3 to 6
+
+
+```{r}
+desc_3_to_6 <- get_zero_order_diffs(net_3_to_6, net_3_to_6, data = d2_ef$prior_age2, summary = TRUE)
+
+knitr::kable(desc_3_to_6[[1]])
+```
+
+## 7 to 10
+
+
+```{r}
+desc_7_to_10 <-  get_zero_order_diffs(net_7_to_10, net_7_to_10, data = d2_ef$current_age, summary = TRUE)
+
+
+knitr::kable(desc_7_to_10[[1]])
+```
+
+## 11 to 13
+
+
+```{r}
+desc_11_to_13 <- get_zero_order_diffs(net_11_to_13, net_11_to_13, data = d3_ef$current_age, summary = TRUE)
+knitr::kable(desc_11_to_13[[1]])
+```
+
+## 14 to 17
+
+
+```{r}
+desc_14_to_17  <- get_zero_order_diffs(net_14_to_17, net_14_to_17, data = d4_ef$current_age, summary = TRUE)
+
+knitr::kable(desc_14_to_17[[1]])
+```
+
+## 18 to 39
+
+
+```{r}
+desc_18_to_39  <- get_zero_order_diffs(net_18_to_39, net_18_to_39, data = d5_ef$current_age, summary = TRUE)
+
+knitr::kable(desc_18_to_39[[1]])
+```
+
+
+## 40 to 64
+
+
+```{r}
+desc_40_to_64 <- get_zero_order_diffs(net_40_to_64, net_40_to_64, data = d6_ef$current_age, summary = TRUE)
+
+knitr::kable(desc_40_to_64[[1]])
+```
+
+## 65 to 85
+
+
+```{r}
+desc_65_to_85 <- get_zero_order_diffs(net_65_to_85, net_65_to_85, data = d7_ef$current_age, summary = TRUE)
+
+knitr::kable(desc_65_to_85[[1]])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# PLOTS
+
+```{r message=FALSE, warning=FALSE}
+source("make_net_plot_cor.R")
+
+
+# Font
+windowsFonts(Times = windowsFont("Times New Roman"))
+```
+
+
+## 3 - 6
+
+
+```{r}
+make_net_plot_cor(
+  net = net_3_to_6,
+  data = d2_ef$prior_age2,
+  node_labels = c("DCCS", "LstSrt", "Flanker")
+) +
+  ggtitle("3 to 6 years") -> plot_3_6
+```
+
+## 7 - 10
+
+
+```{r}
+make_net_plot_cor(
+  net = net_7_to_10,
+  data = d2_ef$current_age,
+  node_labels = c("DCCS", "LstSrt", "Flanker")
+) +
+  ggtitle("7 to 10 years") -> plot_7_10
+```
+
+
+## 11 to 13
+
+
+```{r}
+make_net_plot_cor(
+  net = net_11_to_13,
+  data = d3_ef$current_age,
+  node_labels = c("DCCS", "LstSrt", "Flanker")
+) +
+  ggtitle("11 to 13 years") -> plot_11_13
+```
+
+
+## 14 to 17
+
+
+```{r}
+make_net_plot_cor(
+  net = net_14_to_17,
+  data = d4_ef$current_age,
+  node_labels = c("DCCS", "LstSrt", "Flanker")
+) +
+  ggtitle("14 to 17 years") -> plot_14_17
+```
+
+
+## 18 to 39
+
+
+```{r}
+make_net_plot_cor(
+  net = net_18_to_39,
+  data = d5_ef$current_age,
+  node_labels = c("DCCS", "LstSrt", "Flanker")
+) +
+  ggtitle("18 to 39 years") -> plot_18_39
+```
+
+## 40 to 64
+
+
+```{r}
+make_net_plot_cor(
+  net = net_40_to_64,
+  data = d6_ef$current_age,
+  node_labels = c("DCCS", "LstSrt", "Flanker")
+) +
+  ggtitle("40 to 64 years") -> plot_40_to_64
+```
+
+## 65 to 85
+
+
+```{r}
+make_net_plot_cor(
+  net = net_65_to_85,
+  data = d7_ef$current_age,
+  node_labels = c("DCCS", "LstSrt", "Flanker")) +
+  ggtitle("65 to 85 years") -> plot_65_to_85
+```
+
+
+## Concatenate plots
+
+```{r include = FALSE, eval = T}
+
+plot_grid_ages <-
+  plot_grid(
+    plot_3_6,
+    NULL,
+    plot_7_10,
+    NULL,
+    plot_11_13,
+    NULL,
+    plot_14_17,
+    NULL,
+    plot_18_39,
+    NULL,
+    plot_40_to_64,
+    NULL,
+    plot_65_to_85,
+    NULL,
+    nrow = 14,
+    rel_heights = rep(c(100, 20), 7),
+    axis = "trbl"
+)
+
+
+# plot_grid_ages
+# 
+ggsave(
+  "network_plot_zero_order.png",
+  plot_grid_ages,
+  dpi = 500,
+  width = 6.5,
+  height = 12,
+  units = "in",
+  bg = "white",
+  scale = 2
+  )
+```
+
