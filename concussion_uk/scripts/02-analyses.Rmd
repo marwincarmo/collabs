@@ -1,0 +1,51 @@
+---
+title: "Concussion network"
+author: ""
+date: ""
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE, fig.width = 12, fig.height = 12)
+
+library(BGGM)
+library(dplyr)
+library(ggplot2)
+```
+
+## Exploratory data analyses
+
+```{r data, include=FALSE}
+data_raw <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav")
+
+symptoms <- names(data_raw)[19:length(names(data_raw))]
+```
+
+### Check missing values
+
+```{r}
+data_raw[, symptoms] |> 
+  dplyr::summarise(
+    dplyr::across(
+      dplyr::everything(),
+      ~ sum(is.na(.x))
+    )
+  )
+```
+
+## Network estimation on T0
+
+```{r}
+day0 <- data_raw[data_raw[, "SurveyTime"] == 0, symptoms]
+
+# fit model
+fit0 <- estimate(day0 +1, type = "ordinal")
+
+summary(fit0)
+```
+
