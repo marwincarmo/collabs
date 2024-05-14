@@ -1,6 +1,6 @@
 ---
-title: "Concussion network"
-author: ""
+title: "Between neworks: survey time"
+author: "Marwin Carmo"
 date: ""
 output:
   html_document:
@@ -11,7 +11,7 @@ output:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, cache = TRUE, fig.width = 12, fig.height = 12)
+knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 12, fig.height = 12)
 
 library(BGGM)
 library(dplyr)
@@ -26,13 +26,10 @@ raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::c
 symptoms <- names(raw_data)[19:length(names(raw_data))]
 ```
 
-# Between-person networks
-
-## Time of the day
 
 We want to estimate three different networks averaged across all days for each survey time to check if there are any differences between them.
 
-### Aggregate data by subject and survey time
+## Aggregate data by subject and survey time
 
 ```{r}
 agg_data_days <- raw_data |> 
@@ -44,7 +41,7 @@ agg_data_days <- raw_data |>
                      )
 ```
 
-### Create a different data set for each time of the day
+## Create a different data set for each time of the day
 
 ```{r}
 morning <- agg_data_days[agg_data_days["survey_time"] == 10, ]
@@ -90,17 +87,18 @@ plot(selected_morning, edge_magnify = 5, node_size = 13)
 ```
 
 
-
 ## Comparing networks
 
-```{r eval=FALSE}
-fit_compare <- ggm_compare_estimate(morning, noon, type = "continuous",
-                           iter = 250,
-                           prior_sd = 0.5,
-                           progress = TRUE)
+```{r warning=FALSE}
+fit_compare <- ggm_compare_estimate(morning[, -c(1,2)], noon[, -c(1,2)], evening[, -c(1,2)])
 
 sum_compare <- summary(fit_compare)
 
 sel_compare <- BGGM::select(fit_compare)
+
+plot(sel_compare, edge_magnify = 5, node_size = 13)
+```
+```{r}
+sel_compare
 ```
 
