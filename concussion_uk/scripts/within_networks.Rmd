@@ -1,0 +1,78 @@
+---
+title: "Within-person network model"
+author: "Marwin Carmo"
+date: ""
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 12, fig.height = 12)
+
+library(BGGM)
+library(dplyr)
+library(ggplot2)
+library(networktools)
+```
+
+## Prepare data
+
+```{r data, include=FALSE}
+raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
+
+symptoms <- names(raw_data)[19:length(names(raw_data))]
+```
+
+```{r}
+# scale raw variables
+
+
+long_data <- raw_data |> 
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(symptoms),
+    names_to = "symptom",
+    values_to = "score"
+  )
+
+pc_data <- long_data |> 
+  dplyr::with_groups(
+    symptom,
+    dplyr::mutate,
+    z_score = as.vector(scale(score))
+  ) |> 
+  dplyr::with_groups(
+    c(symptom, subject_id),
+    dplyr::mutate,
+    mean_score = mean(z_score, na.rm = TRUE)
+  ) |> 
+  dplyr::with_groups(
+    symptom,
+    dplyr::mutate,
+    pc_score = z_score - mean_score
+  )
+
+# dat <- raw_data |> 
+#   dplyr::select(subject_id, survey_time, head:vom) |> 
+#   dplyr::mutate(head_z = as.vector(scale(head)),
+#                 nau_z = as.vector(scale(nau)),
+#                 vom_z = as.vector(scale(vom)))
+# 
+# # person means
+# 
+# dat <- dat |> 
+#   dplyr::group_by(subject_id) |> 
+#   dplyr::mutate(head_mean = mean(head_z, na.rm = TRUE),
+#                 nau_mean = mean(nau_z, na.rm = TRUE),
+#                 vom_mean = mean(vom_z, na.rm = TRUE))
+# 
+# # person centered
+# 
+# dat <- dat |> 
+#   dplyr::mutate(head_c = head_z - head_mean,
+#                 nau_c = nau_z - nau_mean,
+#                 vom_c = vom_z - vom_mean)
+```
+
