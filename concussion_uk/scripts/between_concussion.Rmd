@@ -1,5 +1,5 @@
 ---
-title: "Between-person network mode"
+title: "Between-person network model"
 author: "Marwin Carmo"
 date: ""
 output:
@@ -127,7 +127,17 @@ selected_control <- BGGM::select(fit_control)
 
 ```
 
-```{r}
-gs_diffs <- get_gs_diffs(fit_concussion, fit_control)
-knitr::kable(gs_diffs)
+### View differences network
+
+```{r warning=FALSE}
+fit_compare <- ggm_compare_estimate(concussion[,-(1:5)], control[,-(1:5)])
+
+sum_compare <- summary(fit_compare)
+
+sel_compare <- BGGM::select(fit_compare)
 ```
+
+```{r}
+plot(sel_compare, edge_magnify = 5, node_size = 13)
+```
+
