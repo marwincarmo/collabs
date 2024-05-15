@@ -97,6 +97,7 @@ sel_compare <- BGGM::select(fit_compare)
 
 plot(sel_compare, edge_magnify = 5, node_size = 13)
 ```
+
 ```{r}
 sel_compare
 ```
