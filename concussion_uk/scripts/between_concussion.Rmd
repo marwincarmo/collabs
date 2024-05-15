@@ -1,0 +1,133 @@
+---
+title: "Between-person network mode"
+author: "Marwin Carmo"
+date: ""
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 12, fig.height = 12)
+
+library(BGGM)
+library(dplyr)
+library(ggplot2)
+library(networktools)
+```
+
+## Prepare data
+
+```{r data, include=FALSE}
+raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
+
+symptoms <- names(raw_data)[19:length(names(raw_data))]
+```
+
+## Averaging across the whole sample
+
+Averaging data across all timepoints
+
+```{r}
+avg_data <- raw_data |> 
+  dplyr::select(-c(time_completed, gender, race,psych, conctime, loc, pta, 
+                   ptanum, agefirstinj, conmech, locnum
+                   )
+                ) |> 
+  dplyr::filter(survey_day != 0) |> 
+  dplyr::with_groups(subject_id,
+                     dplyr::summarise,
+                     dplyr::across(age:vis,
+                                   ~mean(.x)
+                                   )
+                     )  
+  
+
+```
+```{r}
+fit_between <- estimate(avg_data[,-(1:5)], type="continuous")
+```
+
+```{r}
+summary(fit_between)
+```
+
+## Network model
+
+```{r}
+selected_between <- BGGM::select(fit_between)
+```
+
+```{r}
+plot(selected_between, edge_magnify = 5, node_size = 13)
+```
+
+### Bridge strength
+
+```{r}
+
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
+
+ei <- function(x,...){
+     expectedInf(x,...)$step1
+}
+```
+
+```{r}
+strength_between <- roll_your_own(fit_between,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = names(avg_data[,-(1:5)]),
+                          progress = TRUE)
+```
+
+```{r}
+dimnames(strength_between$results) <- list(symptoms)
+
+plot(strength_between) +
+  theme_minimal()
+```
+
+### Expected influence
+
+```{r}
+ei_between <- roll_your_own(fit_between,
+                          FUN = ei,
+                          progress = TRUE)
+```
+
+```{r}
+dimnames(ei_between$results) <- list(symptoms)
+
+plot(ei_between) +
+  theme_minimal()
+```
+
+
+## Network comparison (concussion vs. no concussion)
+
+```{r}
+concussion <- avg_data[avg_data$concussion == 1, ]
+
+control <- avg_data[avg_data$concussion == 0, ]
+```
+
+```{r}
+fit_concussion <- estimate(concussion[,-(1:5)], type="continuous")
+
+fit_control <- estimate(control[,-(1:5)], type="continuous")
+```
+```{r}
+selected_concussion <- BGGM::select(fit_concussion)
+selected_control <- BGGM::select(fit_control)
+
+```
+
+```{r}
+gs_diffs <- get_gs_diffs(fit_concussion, fit_control)
+knitr::kable(gs_diffs)
+```
