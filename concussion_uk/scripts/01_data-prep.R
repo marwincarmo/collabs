@@ -3,6 +3,7 @@
 
 library(tidyr)
 library(dplyr)
+library(BGGM)
 
 # 01 Load in data ---------------------------------------------------------
 
@@ -46,9 +47,6 @@ df_complete <- data %>%
   group_by(subject_id) %>%
   complete(survey_day = all_combinations$survey_day, survey_time = all_combinations$survey_time) %>%
   ungroup()
-
-# Print the resulting dataframe
-print(df_complete)
 
 
 # 04 impute data with BGGM ------------------------------------------------
