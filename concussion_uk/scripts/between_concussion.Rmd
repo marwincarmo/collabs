@@ -22,8 +22,10 @@ library(networktools)
 
 ```{r data, include=FALSE}
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
+data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
 
 symptoms <- names(raw_data)[19:length(names(raw_data))]
+symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
 ```
 
 ## Averaging across the whole sample
@@ -32,10 +34,10 @@ Averaging data across all timepoints
 
 ```{r}
 avg_data <- raw_data |> 
-  dplyr::select(-c(time_completed, gender, race,psych, conctime, loc, pta, 
-                   ptanum, agefirstinj, conmech, locnum
-                   )
-                ) |> 
+  # dplyr::select(-c(time_completed, gender, race,psych, conctime, loc, pta, 
+  #                  ptanum, agefirstinj, conmech, locnum
+  #                  )
+  #               ) |> 
   dplyr::filter(survey_day != 0) |> 
   dplyr::with_groups(subject_id,
                      dplyr::summarise,
@@ -46,12 +48,20 @@ avg_data <- raw_data |>
   
 
 ```
+
 ```{r}
-fit_between <- estimate(avg_data[,-(1:5)], type="continuous")
+
+dat <- avg_data |> 
+  dplyr::select(age, sex, race, head:vis)
+
+fit_between <- estimate(dat, type="continuous",
+                        formula = ~ age + sex + race
+                        )
 ```
 
 ```{r}
-summary(fit_between)
+summary(fit_between)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean)))
 ```
 
 ## Network model

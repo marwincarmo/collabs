@@ -23,12 +23,14 @@ library(networktools)
 ```{r data, include=FALSE}
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
 
+data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
+
 symptoms <- names(raw_data)[19:length(names(raw_data))]
+symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
 ```
 
 ```{r}
-# scale raw variables
-
+# wide to long
 
 long_data <- raw_data |> 
   tidyr::pivot_longer(
@@ -37,42 +39,83 @@ long_data <- raw_data |>
     values_to = "score"
   )
 
-pc_data <- long_data |> 
+# person centering
+c_data <- long_data |> 
   dplyr::with_groups(
     symptom,
     dplyr::mutate,
-    z_score = as.vector(scale(score))
+    z_score = as.vector(scale(score)) # scale the symptoms across all individuals and all time points
   ) |> 
   dplyr::with_groups(
     c(symptom, subject_id),
     dplyr::mutate,
-    mean_score = mean(z_score, na.rm = TRUE)
+    mean_score = mean(z_score, na.rm = TRUE) # mean person score in standardized units
   ) |> 
   dplyr::with_groups(
     symptom,
     dplyr::mutate,
-    pc_score = z_score - mean_score
+    pc_score = z_score - mean_score # person centered score is the person deviation 
+                                    # at each measurement from their own average 
   )
 
-# dat <- raw_data |> 
-#   dplyr::select(subject_id, survey_time, head:vom) |> 
-#   dplyr::mutate(head_z = as.vector(scale(head)),
-#                 nau_z = as.vector(scale(nau)),
-#                 vom_z = as.vector(scale(vom)))
-# 
-# # person means
-# 
-# dat <- dat |> 
-#   dplyr::group_by(subject_id) |> 
-#   dplyr::mutate(head_mean = mean(head_z, na.rm = TRUE),
-#                 nau_mean = mean(nau_z, na.rm = TRUE),
-#                 vom_mean = mean(vom_z, na.rm = TRUE))
-# 
-# # person centered
-# 
-# dat <- dat |> 
-#   dplyr::mutate(head_c = head_z - head_mean,
-#                 nau_c = nau_z - nau_mean,
-#                 vom_c = vom_z - vom_mean)
+# revert back to wide
+
+pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |> 
+  tidyr::pivot_wider(id_cols = subject_id,
+                     names_from = symptom,
+                     values_from = pc_score) |>
+  tidyr::unnest()
+
+```
+
+## var
+
+```{r}
+fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-1], progress = FALSE)
+
+
+```
+
+
+
+## Within-person network model
+
+### Estimate the network model
+
+```{r}
+fit_within <- BGGM::estimate(pc_data[, -1])
+```
+
+```{r}
+summary(fit_within)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean)))
+```
+## Network plots
+
+```{r}
+sel_within <- BGGM::select(fit_within)
+
+plot(sel_within, edge_magnify = 5, node_size = 13)
+```
+
+## Bridge strength
+
+```{r}
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
+```
+
+```{r}
+st_within <- roll_your_own(fit_within,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = names(pc_data[, -1]),
+                          progress = TRUE)
+```
+
+```{r}
+dimnames(st_within$results) <- list(symptoms_names)
+plot(st_within)
 ```
 
