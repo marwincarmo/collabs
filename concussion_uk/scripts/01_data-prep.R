@@ -1,6 +1,7 @@
 
 # 00 Load packages --------------------------------------------------------
 
+library(tidyr)
 library(dplyr)
 
 # 01 Load in data ---------------------------------------------------------
@@ -29,14 +30,27 @@ long_data |>
 
 # are the missing observations already deleted?
 
-# 02 Create between persons data ------------------------------------------
 
-# Obtain participant means of each symptom averaging across all survey times.
+# 03 Create a new dataset with NAs ----------------------------------------
 
-raw_data |> 
-  group_by(SubjectID) |> 
-  arrange(SubjectID)
+data <- raw_data |> 
+  dplyr::filter(survey_day != 0)
 
-count(raw_data, SurveyDay) |> print(n=Inf)
+all_combinations <- expand.grid(
+  survey_day = 1:30,
+  survey_time = c(10, 3, 8)
+)
 
-count(raw_data, SurveyTime) |> print(n=Inf)
+# Ensure all combinations for each ID are present, filling missing values with NA
+df_complete <- data %>%
+  group_by(subject_id) %>%
+  complete(survey_day = all_combinations$survey_day, survey_time = all_combinations$survey_time) %>%
+  ungroup()
+
+# Print the resulting dataframe
+print(df_complete)
+
+
+# 04 impute data with BGGM ------------------------------------------------
+
+imp_data <- impute_data(df_complete[, symptoms])
