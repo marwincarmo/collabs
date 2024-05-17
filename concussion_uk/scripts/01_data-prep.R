@@ -54,3 +54,5 @@ print(df_complete)
 # 04 impute data with BGGM ------------------------------------------------
 
 imp_data <- impute_data(df_complete[, symptoms])
+
+saveRDS(df_complete, "data/PSCMissings.rds")
