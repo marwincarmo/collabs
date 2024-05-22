@@ -10,15 +10,15 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 12, fig.height = 12)
+knitr::opts_chunk$set(echo = FALSE,  message=FALSE, include=TRUE, warning = FALSE, fig.width = 8, fig.height = 5)
 
 library(BGGM)
 library(dplyr)
 library(ggplot2)
 library(networktools)
+library(patchwork)
+library(kableExtra)
 ```
-
-## Prepare data
 
 ```{r data, include=FALSE}
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
@@ -28,11 +28,13 @@ symptoms <- names(raw_data)[19:length(names(raw_data))]
 symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
 ```
 
-## Averaging across the whole sample
+## Averaged between-person network
 
-Averaging data across all timepoints
+We estimate the Gaussian graphical model with all the symptoms averaged across all time points, controlling for the effect of sex, and including the whole sample.
 
-```{r}
+```{r }
+# Averaging data across all timepoints
+
 avg_data <- raw_data |> 
   # dplyr::select(-c(time_completed, gender, race,psych, conctime, loc, pta, 
   #                  ptanum, agefirstinj, conmech, locnum
@@ -49,19 +51,24 @@ avg_data <- raw_data |>
 
 ```
 
-```{r}
+```{r }
 
+# selecting only the relevant variables
 dat <- avg_data |> 
-  dplyr::select(age, sex, race, head:vis)
+  dplyr::select(sex, head:vis)
 
+# estimate the network controlling for sex
 fit_between <- estimate(dat, type="continuous",
-                        formula = ~ age + sex + race
+                        formula = ~ sex
                         )
 ```
 
-```{r}
+```{r include=TRUE}
 summary(fit_between)$dat_results |> 
-  dplyr::arrange(desc(abs(Post.mean)))
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
 ```
 
 ## Network model
@@ -71,7 +78,7 @@ selected_between <- BGGM::select(fit_between)
 ```
 
 ```{r}
-plot(selected_between, edge_magnify = 5, node_size = 13)
+plot(selected_between, edge_magnify = 5, node_size = 13)$plt
 ```
 
 ### Bridge strength
@@ -87,16 +94,18 @@ ei <- function(x,...){
 }
 ```
 
-```{r}
+```{r eval=FALSE}
 strength_between <- roll_your_own(fit_between,
                           FUN = bridgestrenght,
                           select = TRUE,
-                          communities = names(avg_data[,-(1:5)]),
+                          communities = symptoms,
                           progress = TRUE)
+saveRDS(strength_between, "../data/strength_between.rds")
 ```
 
 ```{r}
-dimnames(strength_between$results) <- list(symptoms)
+strength_between <- readRDS("../data/strength_between.rds")
+dimnames(strength_between$results) <- list(symptoms_names)
 
 plot(strength_between) +
   theme_minimal()
@@ -107,11 +116,11 @@ plot(strength_between) +
 ```{r}
 ei_between <- roll_your_own(fit_between,
                           FUN = ei,
-                          progress = TRUE)
+                          progress = FALSE)
 ```
 
 ```{r}
-dimnames(ei_between$results) <- list(symptoms)
+dimnames(ei_between$results) <- list(symptoms_names)
 
 plot(ei_between) +
   theme_minimal()
@@ -127,9 +136,9 @@ control <- avg_data[avg_data$concussion == 0, ]
 ```
 
 ```{r}
-fit_concussion <- estimate(concussion[,-(1:5)], type="continuous")
+fit_concussion <- estimate(concussion[,symptoms], type="continuous")
 
-fit_control <- estimate(control[,-(1:5)], type="continuous")
+fit_control <- estimate(control[,symptoms], type="continuous")
 ```
 ```{r}
 selected_concussion <- BGGM::select(fit_concussion)
@@ -140,7 +149,7 @@ selected_control <- BGGM::select(fit_control)
 ### View differences network
 
 ```{r warning=FALSE}
-fit_compare <- ggm_compare_estimate(concussion[,-(1:5)], control[,-(1:5)])
+fit_compare <- ggm_compare_estimate(concussion[,symptoms], control[,symptoms])
 
 sum_compare <- summary(fit_compare)
 
@@ -148,6 +157,81 @@ sel_compare <- BGGM::select(fit_compare)
 ```
 
 ```{r}
-plot(sel_compare, edge_magnify = 5, node_size = 13)
+plot(sel_compare, edge_magnify = 5, node_size = 13)[[1]] + 
+  labs(title = "Concussion - Control")
 ```
 
+```{r include=TRUE}
+summary(fit_compare)$dat_results[[1]] |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+```{r, fig.width = 8, fig.height = 5}
+pconc <- plot(selected_concussion, edge_magnify = 5, node_size = 13)$plt + labs(title = "Concussion")
+pctrl <- plot(selected_control, edge_magnify = 5, node_size = 13)$plt + labs(title = "Control")
+
+pconc + pctrl
+
+```
+
+## Edge weights - Concussion
+
+```{r include=TRUE}
+summary(fit_concussion)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+## Bridge strenght - Concussion
+
+```{r eval=FALSE}
+strength_concussion <- roll_your_own(fit_concussion,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+saveRDS(strength_concussion, "../out/strength_concussion.rds")
+```
+
+```{r}
+strength_concussion <- readRDS("../out/strength_concussion.rds")
+
+dimnames(strength_concussion$results) <- list(symptoms_names)
+
+plot(strength_concussion) +
+  theme_minimal()
+```
+## Edge weights - Control
+
+```{r include=TRUE}
+summary(fit_control)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+## Bridge strenght - Control
+
+```{r eval=FALSE}
+strength_control <- roll_your_own(fit_control,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+saveRDS(strength_control, "../out/strength_control.rds")
+```
+
+```{r}
+strength_control <- readRDS("../out/strength_control.rds")
+
+dimnames(strength_control$results) <- list(symptoms_names)
+
+plot(strength_control) +
+  theme_minimal()
+```
