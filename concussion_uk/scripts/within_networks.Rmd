@@ -10,15 +10,15 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 12, fig.height = 12)
+knitr::opts_chunk$set(echo = FALSE,  message=FALSE, warning = FALSE, fig.width = 8, fig.height = 5)
 
 library(BGGM)
 library(dplyr)
 library(ggplot2)
 library(networktools)
+library(kableExtra)
 ```
 
-## Prepare data
 
 ```{r data, include=FALSE}
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
@@ -68,19 +68,13 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
 
 ```
 
-## var
 
-```{r}
+```{r eval=FALSE}
 fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-1], progress = FALSE)
-
-
 ```
 
 
-
 ## Within-person network model
-
-### Estimate the network model
 
 ```{r}
 fit_within <- BGGM::estimate(pc_data[, -1])
@@ -88,14 +82,18 @@ fit_within <- BGGM::estimate(pc_data[, -1])
 
 ```{r}
 summary(fit_within)$dat_results |> 
-  dplyr::arrange(desc(abs(Post.mean)))
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
 ```
-## Network plots
+
+## Network plot
 
 ```{r}
 sel_within <- BGGM::select(fit_within)
 
-plot(sel_within, edge_magnify = 5, node_size = 13)
+plot(sel_within, edge_magnify = 5, node_size = 13)$plt
 ```
 
 ## Bridge strength
@@ -106,16 +104,24 @@ bridgestrenght <- function(x, ...){
 }
 ```
 
-```{r}
-st_within <- roll_your_own(fit_within,
+```{r eval=FALSE}
+strength_within <- roll_your_own(fit_within,
                           FUN = bridgestrenght,
                           select = TRUE,
                           communities = names(pc_data[, -1]),
                           progress = TRUE)
+
+saveRDS(strength_within, "../out/strength_within.rds")
 ```
 
 ```{r}
-dimnames(st_within$results) <- list(symptoms_names)
-plot(st_within)
+
+strength_within <- readRDS("../out/strength_within.rds")
+  
+  
+dimnames(strength_within$results) <- list(symptoms_names)
+
+plot(strength_within) +
+  theme_minimal()
 ```
 
