@@ -73,6 +73,12 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
 fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-1], progress = FALSE)
 ```
 
+Concussion vs non-concussion
+
+
+<!-- Do post concussion symptom net differ between history of concussion history or not -->
+
+<!-- control for sex -->
 
 ## Within-person network model
 
@@ -92,8 +98,8 @@ summary(fit_within)$dat_results |>
 
 ```{r}
 sel_within <- BGGM::select(fit_within)
-
 plot(sel_within, edge_magnify = 5, node_size = 13)$plt
+
 ```
 
 ## Bridge strength
