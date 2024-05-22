@@ -136,9 +136,11 @@ control <- avg_data[avg_data$concussion == 0, ]
 ```
 
 ```{r}
-fit_concussion <- estimate(concussion[,symptoms], type="continuous")
+fit_concussion <- estimate(concussion[,symptoms], type="continuous",
+                           formula = ~ sex)
 
-fit_control <- estimate(control[,symptoms], type="continuous")
+fit_control <- estimate(control[,symptoms], type="continuous",
+                        formula = ~ sex)
 ```
 ```{r}
 selected_concussion <- BGGM::select(fit_concussion)
