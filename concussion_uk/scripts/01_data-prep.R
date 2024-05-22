@@ -49,8 +49,21 @@ df_complete <- data %>%
   ungroup()
 
 
+# 04 Check missing percentage ---------------------------------------------
+
+# by survey time
+df_complete %>% 
+  dplyr::group_by(survey_time) %>% 
+  dplyr::summarise(pct_missing = sum(is.na(head))/n())
+
+# by survey day
+df_complete %>% 
+  dplyr::group_by(survey_day) %>% 
+  dplyr::summarise(pct_missing = sum(is.na(head))/n()) %>% 
+  print(n = Inf)
+
 # 04 impute data with BGGM ------------------------------------------------
 
 imp_data <- impute_data(df_complete[, symptoms])
 
-saveRDS(df_complete, "data/PSCMissings.rds")
+#saveRDS(df_complete, "data/PSCMissings.rds")
