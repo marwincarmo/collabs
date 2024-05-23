@@ -70,7 +70,7 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
 
 
 ```{r eval=FALSE}
-fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-1], progress = FALSE)
+fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-c(1,4)], progress = FALSE)
 ```
 
 Concussion vs non-concussion
@@ -83,7 +83,7 @@ Concussion vs non-concussion
 ## Within-person network model
 
 ```{r}
-fit_within <- BGGM::estimate(pc_data[, -1])
+fit_within <- BGGM::estimate(pc_data[, -1], formula = ~ sex)
 ```
 
 ```{r}
