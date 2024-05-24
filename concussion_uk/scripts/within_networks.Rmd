@@ -17,6 +17,7 @@ library(dplyr)
 library(ggplot2)
 library(networktools)
 library(kableExtra)
+library(qgraph)
 ```
 
 
@@ -71,9 +72,19 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
 
 ```{r eval=FALSE}
 fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-c(1,4)], progress = TRUE, iter = 2500)
+sel <- BGGM::select(fit_var)
 ```
 ```{r}
-qgraph(svar$beta_weighted_adj) 
+st_var <- roll_your_own(fit_var,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = 1:21,
+                          progress = TRUE)
+```
+
+
+```{r}
+qgraph(sel$beta_weighted_adj) 
        title="Temporal, Lag-1",  theme='colorblind', negDashed=FALSE,
         legend.cex=0.4, details=TRUE, diag = FALSE, legend=TRUE)
 ```
