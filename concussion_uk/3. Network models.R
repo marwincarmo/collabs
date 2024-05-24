@@ -278,35 +278,35 @@ temp <- getNet(res, "temporal", nonsig = "hide")
 # layout:
 L <- averageLayout(cont,bet,temp)
 
-# pdf(paste0(figs, "N_cont_orthogonal.pdf"), width=8, height=6)
-# qgraph(cont, layout = L,
-#               title="Contemporaneous", theme='colorblind', negDashed=FALSE,
-#               groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
-# dev.off()
-# 
-# pdf(paste0(figs, "N_temp_orthogonal.pdf"), width=8, height=6)
-# qgraph(temp, layout = L,
-#        title="Temporal, Lag-1", theme='colorblind', negDashed=FALSE,
-#        groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
-# dev.off()
-# 
-# pdf(paste0(figs, "N_temp_nodiag_orthogonal.pdf"), width=8, height=6)
-# qgraph(temp, layout = L,
-#        title="Temporal, Lag-1",  theme='colorblind', negDashed=FALSE,
-#        groups=gr, legend.cex=0.4, details=TRUE, diag = FALSE, legend=TRUE, nodeNames = names)
-# dev.off()
-# 
-# pdf(paste0(figs, "N_betw_orthogonal.pdf"), width=8, height=6)
-# qgraph(bet, layout = L,
-#        title="Between-Subjects",theme='colorblind', negDashed=FALSE,
-#        groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
-# dev.off()
-# 
-# pdf(paste0(figs, "N_betw_cors_orthogonal.pdf"), width=8, height=6)
-# qgraph(cor(data_detrended_avg[,varLabs],use="pairwise.complete.obs"), layout = L, labels = varLabs,
-#        title="Between-Subject marginal correlations",  theme='colorblind', negDashed=FALSE,
-#        groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
-# dev.off()
+pdf(paste0(figs, "N_cont_orthogonal.pdf"), width=8, height=6)
+qgraph(cont, layout = L,
+              title="Contemporaneous", theme='colorblind', negDashed=FALSE,
+              groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
+dev.off()
+
+pdf(paste0(figs, "N_temp_orthogonal.pdf"), width=8, height=6)
+qgraph(temp, layout = L,
+       title="Temporal, Lag-1", theme='colorblind', negDashed=FALSE,
+       groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
+dev.off()
+
+pdf(paste0(figs, "N_temp_nodiag_orthogonal.pdf"), width=8, height=6)
+qgraph(temp, layout = L,
+       title="Temporal, Lag-1",  theme='colorblind', negDashed=FALSE,
+       groups=gr, legend.cex=0.4, details=TRUE, diag = FALSE, legend=TRUE, nodeNames = names)
+dev.off()
+
+pdf(paste0(figs, "N_betw_orthogonal.pdf"), width=8, height=6)
+qgraph(bet, layout = L,
+       title="Between-Subjects",theme='colorblind', negDashed=FALSE,
+       groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
+dev.off()
+
+pdf(paste0(figs, "N_betw_cors_orthogonal.pdf"), width=8, height=6)
+qgraph(cor(data_detrended_avg[,varLabs],use="pairwise.complete.obs"), layout = L, labels = varLabs,
+       title="Between-Subject marginal correlations",  theme='colorblind', negDashed=FALSE,
+       groups=gr, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = names)
+dev.off()
 
 
 
