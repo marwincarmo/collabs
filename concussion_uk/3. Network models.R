@@ -249,15 +249,15 @@ dev.off()
 load(paste0(datapath, "network_orthogonal.RData"))
 
 # Run mlVAR (orthogonal):
-# res <- mlVAR(data_detrended,   
-#              vars=varLabs, 
-#              idvar="id",
-#              dayvar="day", 
-#              beepvar="beep", 
-#              lags = 1,
-#              temporal = "orthogonal", 
-#              contemporaneous = "orthogonal",
-#              nCores = 8)
+res <- mlVAR(data_detrended,
+             vars=varLabs,
+             idvar="id",
+             dayvar="day",
+             beepvar="beep",
+             lags = 1,
+             temporal = "orthogonal",
+             contemporaneous = "orthogonal",
+             nCores = 8)
 # save(res, file=paste0(datapath, "network_orthogonal.RData"))
 
 # Plot :

@@ -70,7 +70,12 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
 
 
 ```{r eval=FALSE}
-fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-c(1,4)], progress = FALSE)
+fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-c(1,4)], progress = TRUE, iter = 2500)
+```
+```{r}
+qgraph(svar$beta_weighted_adj) 
+       title="Temporal, Lag-1",  theme='colorblind', negDashed=FALSE,
+        legend.cex=0.4, details=TRUE, diag = FALSE, legend=TRUE)
 ```
 
 Concussion vs non-concussion
