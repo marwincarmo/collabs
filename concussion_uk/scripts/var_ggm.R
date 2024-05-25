@@ -1,6 +1,7 @@
 
 # 1 Load packages and data ------------------------------------------------
 
+library(parallel)
 library(BGGM)
 
 raw_data <- haven::read_sav("data/PCSNetworkModelAnalysis.sav") |> 
@@ -57,13 +58,13 @@ results_list <- list()
 
 # Create an empty vector to store ids that caused errors
 error_ids <- c()
-
+  
 # Loop through each unique id
 for (id in unique_ids) {
   
   tryCatch({
     # Subset the data frame for the current id
-    sub_df <- subset(df, subject_id == id)
+    sub_df <- subset(pc_data, subject_id == id)
   
     ## Check for constant values in variables:
     if( sum(apply(sub_df, 2, FUN = function(x) sd(x)) == 0) > 0 ) {
@@ -74,7 +75,7 @@ for (id in unique_ids) {
     }
   
     # Compute the function
-    result <- var_estimate(sub_df, progress = FALSE, iter = 2000)
+    result <- var_estimate(sub_df, progress = FALSE, iter = 5000)
   
     # Store the result in the list with id as the name
     results_list[[as.character(id)]] <- result
@@ -83,7 +84,7 @@ for (id in unique_ids) {
     #rm(sub_df)
     #gc() # Run garbage collection
   }, error = function(e) {
-      error_ids <- c(error_ids, id)
+      error_ids <<- c(error_ids, id)
     })
   }
 
