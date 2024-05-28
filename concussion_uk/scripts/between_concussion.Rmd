@@ -121,11 +121,13 @@ control <- avg_data[avg_data$concussion == 0, ]
 ```
 
 ```{r}
-fit_concussion <- estimate(concussion[,c("sex", symptoms)], type="continuous",
-                           formula = ~ sex)
+fit_concussion <- estimate(concussion[,c(symptoms)], type="continuous",
+                           #formula = ~ sex
+                           )
 
-fit_control <- estimate(control[,c("sex", symptoms)], type="continuous",
-                        formula = ~ sex)
+fit_control <- estimate(control[,c(symptoms)], type="continuous",
+                        #formula = ~ sex
+                        )
 ```
 ```{r}
 selected_concussion <- BGGM::select(fit_concussion)
@@ -193,6 +195,7 @@ dimnames(strength_concussion$results) <- list(symptoms_names)
 plot(strength_concussion) +
   theme_minimal()
 ```
+
 ## Edge weights - Control
 
 ```{r include=TRUE}

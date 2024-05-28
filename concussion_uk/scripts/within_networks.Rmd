@@ -9,8 +9,10 @@ output:
     toc_depth: 3
 ---
 
+In the within-person network model we investigate the associations between the symptoms at each measurement occasion, after subtracting out the person-average from each measurement. That is, first we scaled the symptoms across all the individuals and all measurement occasions. Then, calculated the mean person score in standardized units. Finally, subtracted each standardized score from their own average to obtain a person centered score. That way we can observe whether fluctuations around each participant's mean in one symptom are associated with fluctuations in this same participant's mean in another symptom. For example, we can examine if someone experiencing more than average vomiting at one measurement occasion would also experience more than average nausea at the same measurement occasion.
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE,  message=FALSE, warning = FALSE, fig.width = 8, fig.height = 5)
+knitr::opts_chunk$set(echo = FALSE,  message=FALSE, warning = FALSE, fig.width = 8, fig.height = 8)
 
 library(BGGM)
 library(dplyr)
@@ -67,30 +69,8 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
                      values_from = pc_score) |>
   tidyr::unnest()
 
+pc_data$sex <- raw_data$sex
 ```
-
-
-```{r eval=FALSE}
-fit_var <- var_estimate(pc_data[pc_data$subject_id==92,-c(1,4)], progress = TRUE, iter = 2500)
-sel <- BGGM::select(fit_var)
-```
-```{r}
-st_var <- roll_your_own(fit_var,
-                          FUN = bridgestrenght,
-                          select = TRUE,
-                          communities = 1:21,
-                          progress = TRUE)
-```
-
-
-```{r}
-qgraph(sel$beta_weighted_adj) 
-       title="Temporal, Lag-1",  theme='colorblind', negDashed=FALSE,
-        legend.cex=0.4, details=TRUE, diag = FALSE, legend=TRUE)
-```
-
-Concussion vs non-concussion
-
 
 <!-- Do post concussion symptom net differ between history of concussion history or not -->
 
@@ -130,7 +110,7 @@ bridgestrenght <- function(x, ...){
 strength_within <- roll_your_own(fit_within,
                           FUN = bridgestrenght,
                           select = TRUE,
-                          communities = names(pc_data[, -1]),
+                          communities = symptoms,
                           progress = TRUE)
 
 saveRDS(strength_within, "../out/strength_within.rds")
