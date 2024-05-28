@@ -81,8 +81,8 @@ for (id in unique_ids) {
     results_list[[as.character(id)]] <- result
   
     # Remove the intermediate object to free up memory
-    #rm(sub_df)
-    #gc() # Run garbage collection
+    rm(sub_df)
+    gc() # Run garbage collection
   }, error = function(e) {
       error_ids <<- c(error_ids, id)
     })

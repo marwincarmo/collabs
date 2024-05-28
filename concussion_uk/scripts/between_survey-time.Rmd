@@ -11,18 +11,26 @@ output:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 12, fig.height = 12)
+knitr::opts_chunk$set(echo = TRUE,  message=FALSE, warning = FALSE, fig.width = 8, fig.height = 8)
 
 library(BGGM)
 library(dplyr)
 library(ggplot2)
+library(kableExtra)
+library(networktools)
 ```
 
 
 ```{r data, include=FALSE}
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> janitor::clean_names()
+data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
 
 symptoms <- names(raw_data)[19:length(names(raw_data))]
+symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
+
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
 ```
 
 
@@ -50,7 +58,7 @@ noon <- agg_data_days[agg_data_days["survey_time"] == 3, ]
 evening <- agg_data_days[agg_data_days["survey_time"] == 8, ]
 ```
 
-### Estimate the network models
+## Estimate the network models
 
 ```{r}
 fit_morning <- estimate(Y = morning[, -c(1,2)],
@@ -63,28 +71,137 @@ fit_evening <- estimate(Y = evening[, -c(1,2)],
                         type = "continuous") 
 ```
 
-### View morning network model summary
+### View 10AM network model summary
 
 ```{r}
-summary(fit_morning)
+summary(fit_morning)$dat_results |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
 ```
 
-### View morning partial correlation matrix
+### View 10AM partial correlation matrix
 
 ```{r}
 pcor_mat(fit_morning)
 ```
 
-### View morning network model plots
+### View 10AM network model plots
 
 ```{r}
 selected_morning <- BGGM::select(fit_morning)
 ```
 
-```{r}
-plot(selected_morning, edge_magnify = 5, node_size = 13)
+```{r, fig.width = 8, fig.height = 8}
+plot(selected_morning, edge_magnify = 5, node_size = 13)$plt
 ```
 
+### Bridge strength 10AM
+
+```{r eval=FALSE}
+strength_morning <- roll_your_own(fit_morning,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+saveRDS(strength_morning, "../out/strength_morning.rds")
+```
+
+```{r echo=FALSE}
+strength_morning <- readRDS("../out/strength_morning.rds")
+dimnames(strength_morning$results) <- list(symptoms_names)
+
+plot(strength_morning) +
+  theme_minimal()
+```
+
+### View 3PM network model summary
+
+```{r}
+summary(fit_noon)$dat_results |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+### View 3PM partial correlation matrix
+
+```{r}
+pcor_mat(fit_noon)
+```
+
+### View 3PM network model plots
+
+```{r}
+selected_noon <- BGGM::select(fit_noon)
+```
+
+```{r, fig.width = 8, fig.height = 8}
+plot(selected_noon, edge_magnify = 5, node_size = 13)$plt
+```
+
+### Bridge strength 3PM network
+
+```{r eval=FALSE}
+strength_noon <- roll_your_own(fit_noon,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+saveRDS(strength_noon, "../out/strength_noon.rds")
+```
+
+```{r echo=FALSE}
+strength_noon <- readRDS("../out/strength_noon.rds")
+dimnames(strength_noon$results) <- list(symptoms_names)
+
+plot(strength_noon) +
+  theme_minimal()
+```
+
+### View 8PM network model summary
+
+```{r}
+summary(fit_evening)$dat_results |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+### View 8PM partial correlation matrix
+
+```{r}
+pcor_mat(fit_evening)
+```
+
+### View 8PM network model plots
+
+```{r}
+selected_evening <- BGGM::select(fit_evening)
+```
+
+```{r, fig.width = 8, fig.height = 8}
+plot(selected_evening, edge_magnify = 5, node_size = 13)$plt
+```
+
+### Bridge strength 8PM network
+
+```{r eval=FALSE}
+strength_evening <- roll_your_own(fit_evening,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+saveRDS(strength_evening, "../out/strength_evening.rds")
+```
+
+```{r echo=FALSE}
+strength_evening <- readRDS("../out/strength_evening.rds")
+dimnames(strength_evening$results) <- list(symptoms_names)
+
+plot(strength_evening) +
+  theme_minimal()
+```
 
 ## Comparing networks
 
@@ -95,10 +212,17 @@ sum_compare <- summary(fit_compare)
 
 sel_compare <- BGGM::select(fit_compare)
 
-plot(sel_compare, edge_magnify = 5, node_size = 13)
 ```
 
 ```{r}
-sel_compare
+plot(sel_compare, edge_magnify = 5, node_size = 13)[[1]] + 
+  labs(title = "10AM - 3PM")
 ```
-
+```{r}
+plot(sel_compare, edge_magnify = 5, node_size = 13)[[2]] + 
+  labs(title = "10AM - 8PM")
+```
+```{r}
+plot(sel_compare, edge_magnify = 5, node_size = 13)[[3]] + 
+  labs(title = "3PM - 8PM")
+```
