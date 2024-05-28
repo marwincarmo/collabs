@@ -10,7 +10,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE,  message=FALSE, include=TRUE, warning = FALSE, fig.width = 8, fig.height = 5)
+knitr::opts_chunk$set(echo = FALSE,  message=FALSE, include=TRUE, warning = FALSE, fig.width = 8, fig.height = 8)
 
 library(BGGM)
 library(dplyr)
@@ -30,7 +30,7 @@ symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,
 
 ## Averaged between-person network
 
-We estimate the Gaussian graphical model with all the symptoms averaged across all time points, controlling for the effect of sex, and including the whole sample.
+We estimate the Gaussian graphical model with all the symptoms averaged across all time points, controlling for the effect of sex, and including the whole sample. The results include the posterior mean and 95% credible interval for the edge weights estimates. Graphically, these relations are shown as a network plot. Additionally, we also compute the bridge strength of each symptom. It represents the absolute edge weights for each node, such that the value is a composite of all associations (positive or negative) a node has with other nodes.
 
 ```{r }
 # Averaging data across all timepoints
@@ -111,21 +111,6 @@ plot(strength_between) +
   theme_minimal()
 ```
 
-### Expected influence
-
-```{r}
-ei_between <- roll_your_own(fit_between,
-                          FUN = ei,
-                          progress = FALSE)
-```
-
-```{r}
-dimnames(ei_between$results) <- list(symptoms_names)
-
-plot(ei_between) +
-  theme_minimal()
-```
-
 
 ## Network comparison (concussion vs. no concussion)
 
@@ -136,10 +121,10 @@ control <- avg_data[avg_data$concussion == 0, ]
 ```
 
 ```{r}
-fit_concussion <- estimate(concussion[,symptoms], type="continuous",
+fit_concussion <- estimate(concussion[,c("sex", symptoms)], type="continuous",
                            formula = ~ sex)
 
-fit_control <- estimate(control[,symptoms], type="continuous",
+fit_control <- estimate(control[,c("sex", symptoms)], type="continuous",
                         formula = ~ sex)
 ```
 ```{r}
