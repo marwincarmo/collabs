@@ -48,6 +48,15 @@ pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |>
                      values_from = pc_score) |>
   tidyr::unnest()
 
+# add random noise
+set.seed(999)
+for (j in 2:ncol(pc_data)) {
+  for (i in 1:nrow(pc_data)){
+    noise <- rnorm(1, 0, 0.001)
+    pc_data[i, j] <- pc_data[i, j] + noise 
+  }
+}
+
 # 2 Estimate var for each subject -----------------------------------------
 
 # Get the unique ids
