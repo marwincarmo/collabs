@@ -1,7 +1,14 @@
-roll_your_own <- function(object,
-                          FUN,
+library(networktools)
+library(BGGM)
+
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
+
+bs_var <- function(object,
+                          FUN = bridgestrenght,
                           iter = NULL,
-                          select = FALSE,
+                          select = TRUE,
                           cred = 0.95,
                           progress = TRUE,
                           ...){
@@ -13,7 +20,7 @@ roll_your_own <- function(object,
   if(!isFALSE(select)){
     
     sel <- BGGM::select(object, cred = cred)
-    adj <- sel$adj
+    adj <- sel$pcor_adj
     
   } else {
     
@@ -22,7 +29,7 @@ roll_your_own <- function(object,
     
   }
   
-  if(is.null(iter)){
+   if(is.null(iter)){
     
     iter <- object$iter
     
@@ -34,11 +41,11 @@ roll_your_own <- function(object,
     pb <- utils::txtProgressBar(min = 0, max = iter, style = 3)
   }
   
-  results <- sapply(1:iter, function(x) {
+  results <- mcmapply(x = 1:iter, mc.cores = 8, FUN = function(x) {
     
     pcors_s <- pcors[, , x] * adj
     
-    est <- FUN(pcors_s, communities=1:21)
+    est <- FUN(pcors_s, communities=1:22)
     
     if(isTRUE(progress)){
       
@@ -47,7 +54,7 @@ roll_your_own <- function(object,
     }
     
     est
-    
+
   })
   
   returned_object <- list(results = results, iter = iter)
