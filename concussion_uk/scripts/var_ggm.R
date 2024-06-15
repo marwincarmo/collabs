@@ -1,66 +1,12 @@
 
 # 1 Load packages and data ------------------------------------------------
 
-library(parallel)
-library(BGGM)
 
-raw_data <- haven::read_sav("data/PCSNetworkModelAnalysis.sav") |> 
-  janitor::clean_names()
-
-data_dictionary <- readxl::read_excel("Data Dictionary.xlsx")
-
-symptoms <- names(raw_data)[19:length(names(raw_data))]
-symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
-
-long_data <- raw_data |> 
-  tidyr::pivot_longer(
-    cols = dplyr::all_of(symptoms),
-    names_to = "symptom",
-    values_to = "score"
-  )
-
-## Transform data to long ----
-
-# person centering
-c_data <- long_data |> 
-  dplyr::with_groups(
-    symptom,
-    dplyr::mutate,
-    z_score = as.vector(scale(score)) # scale the symptoms across all individuals and all time points
-  ) |> 
-  dplyr::with_groups(
-    c(symptom, subject_id),
-    dplyr::mutate,
-    mean_score = mean(z_score, na.rm = TRUE) # mean person score in standardized units
-  ) |> 
-  dplyr::with_groups(
-    symptom,
-    dplyr::mutate,
-    pc_score = z_score - mean_score # person centered score is the person deviation 
-    # at each measurement from their own average 
-  )
-
-# revert back to wide
-
-pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |> 
-  tidyr::pivot_wider(id_cols = subject_id,
-                     names_from = symptom,
-                     values_from = pc_score) |>
-  tidyr::unnest()
-
-# add random noise
-set.seed(999)
-for (j in 2:ncol(pc_data)) {
-  for (i in 1:nrow(pc_data)){
-    noise <- rnorm(1, 0, 0.001)
-    pc_data[i, j] <- pc_data[i, j] + noise 
-  }
-}
 
 # 2 Estimate var for each subject -----------------------------------------
 
 # Get the unique ids
-unique_ids <- unique(pc_data$subject_id)
+unique_ids <- unique(pc_data$subject_id)[1:3]
 
 # Create an empty list to store results
 results_list <- list()
@@ -70,9 +16,7 @@ error_ids <- c()
 
 # Loop through each unique id
 
-estimate_var_ggm <- function(unique_ids) {
-  
-  n <- length(unique_ids)
+n <- length(unique_ids)
   
 for (id in unique_ids) {
   
@@ -113,8 +57,8 @@ for (id in unique_ids) {
   }
 
 # Save the results list to an .rds file
-  file_name <- paste0("out/results_noise/id_", names(results_list[i]), ".rds")
-  saveRDS(results_list[i], file_name)
+# file_name <- paste0("out/results_noise/id_", names(results_list[i]), ".rds")
+# saveRDS(results_list[i], file_name)
 # saveRDS(results_list, file = "results.rds")
 
 # Load the results
@@ -127,7 +71,7 @@ for (id in unique_ids) {
 #   # Save the element
 #   saveRDS(results_noise[i], file_name)
 #   }
-}
+
 
 ## IDs that failed to converge ----
 
@@ -157,13 +101,18 @@ raw_data |>
 
 
 # 3 Estimate bridge strength ----------------------------------------------
+source("scripts/roll_your_own.R")
 library(networktools)
 bridgestrenght <- function(x, ...){
   bridge(x, ...)$`Bridge Strength`
 }
 
-strength_morning <- roll_your_own(result,
-                                  FUN = bridgestrenght,
-                                  select = TRUE,
-                                  communities = 1:21,
-                                  progress = TRUE)
+for (j in 1:length(results_list)) {
+  
+  res <- roll_your_own2(results_list[[j]], iter = 2000, select = TRUE, 
+                        FUN = bridgestrenght, communities = 1:22, progress = TRUE, 
+                        cores = 8)
+  saveRDS(res, paste0("out/results_noise/bs/bs_", names(results_list[j]), ".rds") )
+}
+
+

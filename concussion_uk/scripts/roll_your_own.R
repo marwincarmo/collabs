@@ -120,12 +120,13 @@
 #' }
 #'
 #' @export
-roll_your_own <- function(object,
+roll_your_own2 <- function(object,
                           FUN,
                           iter = NULL,
                           select = FALSE,
                           cred = 0.95,
                           progress = TRUE,
+                          cores = 2,
                           ...){
   
   # modify the if statement to also accept var_estimate objects
@@ -166,21 +167,42 @@ roll_your_own <- function(object,
     pb <- utils::txtProgressBar(min = 0, max = iter, style = 3)
   }
   
-  results <- sapply(1:iter, function(x) {
+  
+  
+  # results <- sapply(1:iter, function(x) {
+  #   
+  #   pcors_s <- pcors[, , x] * adj
+  #   
+  #   est <- FUN(pcors_s, ...)
+  #   
+  #   if(isTRUE(progress)){
+  #     
+  #     utils::setTxtProgressBar(pb, x)
+  #     
+  #   }
+  #   
+  #   est
+  #   
+  # })
+  
+  getRes <- function(x) {
     
     pcors_s <- pcors[, , x] * adj
     
     est <- FUN(pcors_s, ...)
     
-    if(isTRUE(progress)){
-      
-      utils::setTxtProgressBar(pb, x)
-      
-    }
+    # if(isTRUE(progress)){
+    #   
+    #   utils::setTxtProgressBar(pb, x)
+    #   
+    # }
     
     est
     
-  })
+  }
+  
+  results <- mclapply(X = 1:iter, FUN = getRes , mc.cores = cores)
+  results <- simplify2array(results)
   
   returned_object <- list(results = results, iter = iter)
   

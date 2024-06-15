@@ -1,7 +1,7 @@
 library(networktools)
 library(BGGM)
 
-bridgestrenght <- function(x, ...){
+FUN <- function(x, ...){
   bridge(x, ...)$`Bridge Strength`
 }
 
