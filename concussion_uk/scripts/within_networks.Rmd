@@ -20,6 +20,8 @@ library(ggplot2)
 library(networktools)
 library(kableExtra)
 library(qgraph)
+library(network)
+library(GGally)
 ```
 
 
@@ -30,6 +32,26 @@ data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
 
 symptoms <- names(raw_data)[19:length(names(raw_data))]
 symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
+
+getCentral <- function(x, cred = 0.95) {
+  
+  lb <- (1-cred) / 2
+  ub <- 1 - lb
+  
+  mu <-  apply( x$results, 1, mean)
+  p <- length(mu)
+  scale <- apply( x$results, 1, sd)
+  ci_lb <- apply( x$results, 1, quantile, lb)
+  ci_ub <- apply( x$results, 1, quantile, ub)
+  
+  res<- data.frame(Node = symptoms_names,
+                   Post.mean = round(mu, 3),
+                   Post.sd = round(scale, 3),
+                   Cred.lb = round(ci_lb, 3),
+                   Cred.ub = round(ci_ub, 3))
+  rownames(res) <- NULL
+  res
+}
 ```
 
 ```{r}
@@ -63,24 +85,24 @@ c_data <- long_data |>
 
 # revert back to wide
 
-pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |> 
-  tidyr::pivot_wider(id_cols = subject_id,
+pc_data <- c_data[,c("subject_id", "sex", "concussion", "pc_score", "symptom")] |> 
+  tidyr::pivot_wider(id_cols = c(subject_id, sex, concussion),
                      names_from = symptom,
                      values_from = pc_score) |>
   tidyr::unnest()
 
-pc_data$sex <- raw_data$sex
 ```
 
 <!-- Do post concussion symptom net differ between history of concussion history or not -->
 
 <!-- control for sex -->
 
-## Within-person network model
+## Within-person network model - Entire sample
 
 ```{r}
-fit_within <- BGGM::estimate(pc_data[, -1], formula = ~ sex)
+fit_within <- BGGM::estimate(pc_data[, -c(1,3)], formula = ~ sex)
 ```
+### Edge weights
 
 ```{r}
 summary(fit_within)$dat_results |> 
@@ -90,7 +112,7 @@ summary(fit_within)$dat_results |>
   scroll_box(height = "300px")
 ```
 
-## Network plot
+### Network plot
 
 ```{r}
 sel_within <- BGGM::select(fit_within)
@@ -98,7 +120,7 @@ plot(sel_within, edge_magnify = 5, node_size = 13)$plt
 
 ```
 
-## Bridge strength
+### Bridge strength
 
 ```{r}
 bridgestrenght <- function(x, ...){
@@ -125,5 +147,189 @@ dimnames(strength_within$results) <- list(symptoms_names)
 
 plot(strength_within) +
   theme_minimal()
+```
+```{r}
+getCentral(strength_within) |> 
+  kbl() |> 
+  kable_paper()
+```
+
+## Within-person network model - Concussion
+
+```{r}
+fit_within_concussion <- BGGM::estimate(pc_data[pc_data$concussion == 1, -c(1,3)], formula = ~ sex)
+```
+### Edge weights
+
+```{r}
+summary(fit_within_concussion)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+### Network plot
+
+```{r}
+sel_within_concussion <- BGGM::select(fit_within_concussion)
+plot(sel_within_concussion, edge_magnify = 5, node_size = 13)$plt
+
+```
+
+### Bridge strength
+
+```{r}
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
+```
+
+```{r eval=FALSE}
+strength_within_concussion <- roll_your_own(fit_within_concussion,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+
+saveRDS(strength_within_concussion, "../out/strength_within_concussion.rds")
+```
+
+```{r}
+
+strength_within_concussion <- readRDS("../out/strength_within_concussion.rds")
+  
+  
+dimnames(strength_within_concussion$results) <- list(symptoms_names)
+
+plot(strength_within_concussion) +
+  theme_minimal()
+```
+```{r}
+getCentral(strength_within_concussion) |> 
+  kbl() |> 
+  kable_paper()
+```
+
+## Within-person network model - Control
+
+```{r}
+fit_within_control <- BGGM::estimate(pc_data[pc_data$concussion == 0, -c(1,3)], formula = ~ sex)
+```
+
+```{r}
+summary(fit_within_control)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+### Network plot
+
+```{r}
+sel_within_control <- BGGM::select(fit_within_control)
+plot(sel_within_control, edge_magnify = 5, node_size = 13)$plt
+
+```
+
+### Bridge strength
+
+```{r}
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
+```
+
+```{r eval=FALSE}
+strength_within_control <- roll_your_own(fit_within_control,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          progress = TRUE)
+
+saveRDS(strength_within_control, "../out/strength_within_control.rds")
+```
+
+```{r}
+
+strength_within_control <- readRDS("../out/strength_within_control.rds")
+  
+  
+dimnames(strength_within_control$results) <- list(symptoms_names)
+
+plot(strength_within_control) +
+  theme_minimal()
+```
+
+```{r}
+getCentral(strength_within_control) |> 
+  kbl() |> 
+  kable_paper()
+```
+
+## Concussion vs. Control
+
+```{r warning=FALSE}
+fit_compare <- ggm_compare_estimate(pc_data[pc_data$concussion == 1, -c(1,3)], pc_data[pc_data$concussion == 0, -c(1,3)],
+                                    formula = ~ sex)
+
+res_compare <- summary(fit_compare)
+
+sel_compare <- BGGM::select(fit_compare)
+```
+
+```{r, fig.width = 12, fig.height = 6}
+plot(res_compare)[[1]] +
+  labs(title = "Concussion - Control")
+```
+
+### Edge weights
+
+```{r include=TRUE}
+summary(fit_compare)$dat_results[[1]] |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  kbl() |> 
+  kable_paper() |> 
+  scroll_box(height = "300px")
+```
+
+### Network plot
+
+```{r}
+
+palette = "Set3"
+cn <- symptoms
+x <- sel_compare
+p <- ncol(x$pcor_adj[[1]])
+diag(x$pcor_adj[[1]]) <- 0
+net <- network::network(x$pcor_adj[[1]])
+
+# edge weights
+network::set.edge.value(x = net, attrname = "weights",
+                          value = x$pcor_adj[[1]])
+  
+# edge weights absolute
+network::set.edge.value(x = net, attrname = "abs_weights",
+                          value = abs(x$pcor_adj[[1]]) * 5)
+# edge colors
+network::set.edge.attribute(x = net, attrname = "edge_color",
+                              value = ifelse(net %e% "weights" < 0,
+                                             "#D55E00",
+                                             "#009E73"))
+e <- abs(as.numeric(x$pcor_adj[[1]]))
+    
+plt <- ggnet2(net, edge.alpha = e[e != 0] / max(e),
+              edge.size = "abs_weights",
+              edge.color = "edge_color",
+              node.size = 13,
+              mode = "circle") +
+  geom_point(color = "black",
+              size = 14) +
+  geom_point(size = 13, color = "white")  +
+  guides(color = "none") +
+  geom_text(label = cn) +
+  labs(title = "Concussion - Control")
+plt
 ```
 
