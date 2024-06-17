@@ -1,7 +1,55 @@
 
 # 1 Load packages and data ------------------------------------------------
 
+library(parallel)
+library(BGGM)
 
+raw_data <- haven::read_sav("data/PCSNetworkModelAnalysis.sav") |> 
+  janitor::clean_names()
+data_dictionary <- readxl::read_excel("Data Dictionary.xlsx")
+symptoms <- names(raw_data)[19:length(names(raw_data))]
+symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
+long_data <- raw_data |> 
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(symptoms),
+    names_to = "symptom",
+    values_to = "score"
+  )
+
+## Transform data to long ----
+# person centering
+c_data <- long_data |> 
+  dplyr::with_groups(
+    symptom,
+    dplyr::mutate,
+    z_score = as.vector(scale(score)) # scale the symptoms across all individuals and all time points
+  ) |> 
+  dplyr::with_groups(
+    c(symptom, subject_id),
+    dplyr::mutate,
+    mean_score = mean(z_score, na.rm = TRUE) # mean person score in standardized units
+  ) |> 
+  dplyr::with_groups(
+    symptom,
+    dplyr::mutate,
+    pc_score = z_score - mean_score # person centered score is the person deviation 
+    # at each measurement from their own average 
+  )
+# revert back to wide
+pc_data <- c_data[,c("subject_id", "pc_score", "symptom")] |> 
+  tidyr::pivot_wider(id_cols = subject_id,
+                     names_from = symptom,
+                     values_from = pc_score) |>
+  tidyr::unnest()
+
+# add random noise
+set.seed(999)
+for (j in 2:ncol(pc_data)) {
+  for (i in 1:nrow(pc_data)){
+    noise <- rnorm(1, 0, 0.001)
+    pc_data[i, j] <- pc_data[i, j] + noise 
+  }
+}
 
 # 2 Estimate var for each subject -----------------------------------------
 
@@ -101,18 +149,73 @@ raw_data |>
 
 
 # 3 Estimate bridge strength ----------------------------------------------
+
 source("scripts/roll_your_own.R")
 library(networktools)
 bridgestrenght <- function(x, ...){
   bridge(x, ...)$`Bridge Strength`
 }
 
-for (j in 1:length(results_list)) {
+
+converged <- na.omit(as.numeric(gsub("[^0-9]", "", list.files("out/results_noise"))))
+
+for (j in 1:length(converged)) {
   
-  res <- roll_your_own2(results_list[[j]], iter = 2000, select = TRUE, 
+  result <- readRDS(paste0("out/results_noise/id_", converged[j], ".rds"))
+  
+  res <- roll_your_own2(result[[1]], iter = 5000, select = TRUE, 
                         FUN = bridgestrenght, communities = 1:22, progress = TRUE, 
-                        cores = 8)
-  saveRDS(res, paste0("out/results_noise/bs/bs_", names(results_list[j]), ".rds") )
+                        cores = 16)
+  saveRDS(res, paste0("out/results_noise/bs/bs_", names(result), ".rds") )
 }
 
+# Find the central symptom ----
+
+bs_list <- lapply(paste0("out/results_noise/bs/", list.files("out/results_noise/bs")), readRDS)
+id_vector <- as.numeric(gsub("[^0-9]", "", list.files("out/results_noise/bs")))
+names(bs_list) <- id_vector
+concussion_id <- unique(raw_data[raw_data$concussion == 1,]$subject_id)
+control_id <- unique(raw_data[raw_data$concussion != 1,]$subject_id)
+
+
+getCentral <- function(x, cred = 0.95) {
+  
+  lb <- (1-cred) / 2
+  ub <- 1 - lb
+  
+  mu <-  apply( x$results, 1, mean)
+  p <- length(mu)
+  scale <- apply( x$results, 1, sd)
+  ci_lb <- apply( x$results, 1, quantile, lb)
+  ci_ub <- apply( x$results, 1, quantile, ub)
+  
+  res<- data.frame(Node = symptoms_names,
+                   Post.mean = round(mu, 3),
+                   Post.sd = round(scale, 3),
+                   Cred.lb = round(ci_lb, 3),
+                   Cred.ub = round(ci_ub, 3))
+  rownames(res) <- NULL
+  tail(res[order(res$Post.mean), ],1)
+}
+
+y <- purrr::map_dfr(bs_list, getCentral, .id = "subject_id")
+y$concussion <- ifelse(y$subject_id %in% concussion_id, 1, 0)
+
+table2 <- y |> 
+  dplyr::with_groups(Node, 
+                     dplyr::mutate,
+                     freq_total = dplyr::n()) |> 
+  dplyr::with_groups(c(concussion, Node), 
+                     dplyr::mutate,
+                     freq_group = dplyr::n()) |> 
+  dplyr::with_groups(c(concussion, Node), 
+                     dplyr::summarise,
+                     freq_group = mean(freq_group),
+                     freq_total = mean(freq_total)) |> 
+  tidyr::pivot_wider(names_from = "concussion", values_from = "freq_group",
+                     names_prefix = "freq_") |> 
+  dplyr::mutate(pct_total = freq_total/sum(freq_total)*100, 
+                pct_0 = freq_0/sum(freq_0)*100,
+                pct_1 = freq_1/sum(freq_1, na.rm=TRUE)*100) |> 
+  dplyr::arrange(factor(Node, levels = symptoms_names))
 
