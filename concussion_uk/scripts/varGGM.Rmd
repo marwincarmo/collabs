@@ -1,0 +1,102 @@
+---
+title: "VAR network model"
+author: "Marwin Carmo"
+date: ""
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,  message=FALSE, warning = FALSE, fig.width = 8, fig.height = 8)
+
+library(parallel)
+library(BGGM)
+library(network)
+library(ggplot2)
+```
+
+```{r data-prep, include=FALSE}
+raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> 
+  janitor::clean_names()
+data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
+symptoms <- names(raw_data)[19:length(names(raw_data))]
+symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
+long_data <- raw_data |> 
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(symptoms),
+    names_to = "symptom",
+    values_to = "score"
+  )
+
+```
+
+```{r plot-fun, include = FALSE}
+plotNet <- function(x) {
+  
+  p <- ncol(x)
+  diag(x) <- 0
+  net <- network::network(x)
+  
+  # edge weights
+  network::set.edge.value(x = net, attrname = "weights",
+                          value = x)
+  
+  # edge weights absolute
+  network::set.edge.value(x = net, attrname = "abs_weights",
+                          value = abs(x) * 5)
+  # edge colors
+  network::set.edge.attribute(x = net, attrname = "edge_color",
+                              value = ifelse(net %e% "weights" < 0,
+                                             "#D55E00",
+                                             "#009E73"))
+  e <- abs(as.numeric(x))
+  
+  plt <- GGally::ggnet2(net, edge.alpha = e[e != 0] / max(e),
+                        edge.size = "abs_weights",
+                        edge.color = "edge_color",
+                        node.size = 13,
+                        mode = "circle") +
+    geom_point(color = "black",
+               size = 14) +
+    geom_point(size = 13, color = "white")  +
+    guides(color = "none") +
+    geom_text(label = symptoms) 
+  plt
+  
+}
+```
+
+
+## Average edge strength - Total sample
+
+```{r var-total}
+
+z_list <- readRDS("../out/z_list.rds")
+sum_matrix <- Reduce("+", z_list)
+mean_matrix <- sum_matrix / length(z_list)
+
+avg_wgt <- BGGM::fisher_z_to_r(mean_matrix)
+colnames(avg_wgt) <- row.names(avg_wgt) <- symptoms
+```
+
+```{r}
+plotNet(avg_wgt) +
+  labs(title = "Average within person network - Total sample")
+```
+
+```{r}
+p <- 22
+I_p <- diag(p)
+
+mat_names <-  sapply(symptoms , function(x) paste(symptoms, x, sep = "--"))[upper.tri(I_p)]
+post_mean <- avg_wgt[upper.tri(diag(p))]
+
+dat_results <-
+      data.frame(
+      relation = mat_names,
+      post_mean =  post_mean)
+```
+

@@ -3,6 +3,9 @@
 
 library(parallel)
 library(BGGM)
+library(network)
+library(ggplot2)
+
 
 raw_data <- haven::read_sav("data/PCSNetworkModelAnalysis.sav") |> 
   janitor::clean_names()
@@ -219,3 +222,118 @@ table2 <- y |>
                 pct_1 = freq_1/sum(freq_1, na.rm=TRUE)*100) |> 
   dplyr::arrange(factor(Node, levels = symptoms_names))
 
+
+# 4 Average edge strength -------------------------------------------------
+
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = length(converged), # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 100,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+z_list <- list()
+
+for (j in 1:length(converged)) {
+  
+  result <- readRDS(paste0("out/results_noise/id_", converged[j], ".rds"))
+  sel <- BGGM::select(result[[1]])
+  pcor <- sel$pcor_weighted_adj
+  z_list[[j]] <- BGGM::fisher_r_to_z(pcor)
+  setTxtProgressBar(pb, j)
+}
+
+saveRDS(z_list, "out/z_list.rds")
+
+sum_matrix <- Reduce("+", z_list)
+mean_matrix <- sum_matrix / length(z_list)
+
+avg_wgt <- BGGM::fisher_z_to_r(mean_matrix)
+sel <- BGGM::select(avg_wgt)
+## Plot average within network ----
+
+plotNet <- function(x) {
+  
+  p <- ncol(x)
+  diag(x) <- 0
+  net <- network::network(x)
+  
+  # edge weights
+  network::set.edge.value(x = net, attrname = "weights",
+                          value = x)
+  
+  # edge weights absolute
+  network::set.edge.value(x = net, attrname = "abs_weights",
+                          value = abs(x) * 5)
+  # edge colors
+  network::set.edge.attribute(x = net, attrname = "edge_color",
+                              value = ifelse(net %e% "weights" < 0,
+                                             "#D55E00",
+                                             "#009E73"))
+  e <- abs(as.numeric(x))
+  
+  plt <- GGally::ggnet2(net, edge.alpha = e[e != 0] / max(e),
+                        edge.size = "abs_weights",
+                        edge.color = "edge_color",
+                        node.size = 13,
+                        mode = "circle") +
+    geom_point(color = "black",
+               size = 14) +
+    geom_point(size = 13, color = "white")  +
+    guides(color = "none") +
+    geom_text(label = symptoms) 
+  plt
+  
+}
+
+
+plotNet(avg_wgt) +
+  labs(title = "Average within person network - Total sample")
+
+
+# 4.1 Average edge strength for concussion group --------------------------
+
+z_list_concussion <- list()
+concussion <- converged[converged %in% unique(raw_data[raw_data$concussion==1, ]$subject_id)]
+
+for (j in 1:length(concussion)) {
+  
+  result <- readRDS(paste0("out/results_noise/id_", concussion[j], ".rds"))
+  sel <- BGGM::select(result[[1]])
+  pcor <- sel$pcor_weighted_adj
+  z_list_concussion[[j]] <- BGGM::fisher_r_to_z(pcor)
+  setTxtProgressBar(pb, j)
+}
+
+
+saveRDS(z_list_concussion, "out/z_list_concussion.rds")
+
+mean_matrix_concussion <- Reduce("+", z_list_concussion) / length(z_list_concussion)
+
+avg_wgt_concussion <- BGGM::fisher_z_to_r(mean_matrix_concussion)
+
+plotNet(avg_wgt_concussion) +
+  labs(title = "Average within person network - Concussion")
+
+# 4.2 Average edge strength for control group --------------------------
+
+z_list_control <- list()
+control <- converged[converged %in% unique(raw_data[raw_data$concussion==0, ]$subject_id)]
+
+for (j in 1:length(control)) {
+  
+  result <- readRDS(paste0("out/results_noise/id_", control[j], ".rds"))
+  sel <- BGGM::select(result[[1]])
+  pcor <- sel$pcor_weighted_adj
+  z_list_control[[j]] <- BGGM::fisher_r_to_z(pcor)
+  setTxtProgressBar(pb, j)
+}
+
+
+saveRDS(z_list_control, "out/z_list_control.rds")
+
+mean_matrix_control <- Reduce("+", z_list_control) / length(z_list_control)
+
+avg_wgt_control <- BGGM::fisher_z_to_r(mean_matrix_control)
+
+plotNet(avg_wgt_control) +
+  labs(title = "Average within person network - Control")
