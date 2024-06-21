@@ -1,0 +1,156 @@
+---
+title: "Concussion networks"
+#author: ""
+output:
+  word_document:
+    reference_docx: /run/media/mcarmo/662229CC2229A253/RProjects/styles/word-styles-reference-01.docx
+csl: "/run/media/mcarmo/662229CC2229A253/RProjects/styles/apa.csl"
+bibliography: references.bib
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE,
+                      tab.cap.sep =". ", tab.layout="autofit", tab.width=0.8)
+
+flextable::set_flextable_defaults(font.size = 12, font.family = "Times New Roman")
+
+library(BGGM)
+library(dplyr)
+library(ggplot2)
+library(networktools)
+library(network)
+library(GGally)
+library(flextable)
+library(officer)
+```
+
+
+```{r helper}
+source("helpers/bggm_missing.R")
+source("helpers/plot.select.R")
+
+bridgestrenght <- function(x, ...){
+  bridge(x, ...)$`Bridge Strength`
+}
+
+ei <- function(x,...){
+     expectedInf(x,...)$step1
+}
+```
+
+```{r table-customization}
+
+big_border = fp_border(color="black", width = 2)
+small_border = fp_border(color="black", width = 1)
+
+my_theme <- function(x, ...) {
+    x <- colformat_double(x, big.mark = "", decimal.mark = ",", digits = 2)
+    x <- set_table_properties(x, width = 1, layout = "autofit")
+    x <- border_remove(x)
+    x <- hline_top( x, border = small_border, part = "all" )
+    x <- hline_bottom(x, border = small_border, part = "all" )
+    x
+
+}
+
+```
+
+
+```{r load-data}
+raw_data <- readRDS("data/PSCMissings.rds") 
+PCS_z <- readRDS("out/PCS_z.rds")
+data_dictionary <- readxl::read_excel("Data Dictionary.xlsx")
+
+symptoms <- names(PCS_z)[19:40]
+symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
+
+# between
+PCSimputed_z_between_mids <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids.rds")
+PCS_between <- PCS_z |> dplyr::select(sex, dplyr::ends_with("_mean"))
+
+
+```
+
+
+# Method
+
+## Statistical analysis
+
+All analyses were conducted using R [@R], version `r getRversion()`.
+
+## Between networks
+
+We estimate the Gaussian graphical model with all the symptoms averaged across all time points, controlling for the effect of sex, and including the whole sample. The results include the posterior mean and 95% credible interval for the edge weights estimates. Graphically, these relations are shown as a network plot. Additionally, we also compute the bridge strength of each symptom. It represents the absolute edge weights for each node, such that the value is a composite of all associations (positive or negative) a node has with other nodes.
+
+### Total sample
+
+```{r fit-between}
+# fit_between <- bggm_missing(imp, iter = 2000, method = "estimate", formula = ~sex, cores=16)
+# saveRDS(fit_between, "out/fit_between/fit_between_total.rds")
+fit_between <- readRDS("out/fit_between/fit_between_total.rds")
+```
+
+
+```{r select-between}
+selected_between <- BGGM::select(fit_between)
+colnames(selected_between$object$Y) <- symptoms
+```
+
+```{r plot-between-total, fig.height=6.5, fig.width=8, dpi=300}
+plot(selected_between, edge_magnify = 5, node_size = 13)$plt 
+```
+
+```{r}
+summary(fit_between)$dat_results |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  flextable() |> 
+  my_theme()
+```
+
+```{r eval=FALSE}
+library(parallel)
+strength_between <- roll_your_own2(fit_between,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          cores=16,
+                          progress = TRUE)
+saveRDS(strength_between, "out/fit_between/strength_between_imp.rds")
+```
+
+
+```{r, dpi=300}
+strength_between <- readRDS("out/fit_between/strength_between_imp.rds")
+dimnames(strength_between$results) <- list(symptoms_names)
+
+plot(strength_between) +
+  theme_minimal()
+```
+
+
+## Network comparison (concussion vs. no concussion)
+
+```{r}
+raw_data$concussion <- as.numeric(haven::as_factor(raw_data$concussion))
+concussion <- PCS_between[raw_data$concussion == 1, ]
+control <- PCS_between[raw_data$concussion == 0, ]
+```
+
+
+```{r warning=FALSE, fig.height=6.5, fig.width=8, dpi=300}
+fit_compare <- ggm_compare_estimate(concussion, control, formula = ~sex, impute = TRUE
+                                    )
+
+sum_compare <- summary(fit_compare)
+sel_compare <- BGGM::select(fit_compare)
+
+plot(sel_compare, edge_magnify = 5, node_size = 13)[[1]] + 
+  labs(title = "Concussion - Control")
+```
+
+
+
+
+
+# References
