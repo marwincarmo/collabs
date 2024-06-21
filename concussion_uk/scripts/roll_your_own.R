@@ -136,7 +136,7 @@ roll_your_own2 <- function(object,
   
   if(!isFALSE(select)){
     
-    sel <- select(object, cred = cred)
+    sel <- BGGM::select(object, cred = cred)
     adj <- if("var_estimate" %in% class(object)) {
       sel$pcor_adj
     } else {
