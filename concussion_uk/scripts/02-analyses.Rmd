@@ -11,7 +11,7 @@ output:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, cache = TRUE, fig.width = 12, fig.height = 12)
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE, fig.width = 8, fig.height = 8)
 
 library(BGGM)
 library(dplyr)
@@ -21,31 +21,77 @@ library(ggplot2)
 ## Exploratory data analyses
 
 ```{r data, include=FALSE}
-data_raw <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav")
+raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> 
+  janitor::clean_names()
 
 symptoms <- names(data_raw)[19:length(names(data_raw))]
 ```
 
-### Check missing values
+### Creating NA cells for missing values
 
 ```{r}
-data_raw[, symptoms] |> 
-  dplyr::summarise(
-    dplyr::across(
-      dplyr::everything(),
-      ~ sum(is.na(.x))
-    )
-  )
+data <- raw_data |> 
+  dplyr::filter(survey_day != 0)
+
+all_combinations <- expand.grid(
+  survey_day = 1:30,
+  survey_time = c(10, 3, 8)
+)
+
+# Ensure all combinations for each ID are present, filling missing values with NA
+df_complete <- data %>%
+  dplyr::group_by(subject_id) %>%
+  tidyr::complete(survey_day = all_combinations$survey_day, survey_time = all_combinations$survey_time) %>%
+  dplyr::ungroup()
 ```
 
-## Network estimation on T0
+## Standardizing symptoms across measurements
 
 ```{r}
-day0 <- data_raw[data_raw[, "SurveyTime"] == 0, symptoms]
+df_complete
+```
 
-# fit model
-fit0 <- estimate(day0 +1, type = "ordinal")
 
-summary(fit0)
+```{r}
+PCS_z <- df_complete |> 
+  #dplyr::group_by(survey_day, survey_time) |> 
+    dplyr::mutate(
+      dplyr::across(
+        dplyr::all_of(symptoms),
+        ~as.vector(scale(.x)) 
+      )
+  ) |>
+  #dplyr::ungroup() |> 
+  dplyr::with_groups(
+    subject_id, # cluster (subject) mean
+    dplyr::mutate,
+    dplyr::across(
+      dplyr::all_of(symptoms),
+      ~mean(.x, na.rm=TRUE), .names = "{col}_mean") 
+    ) 
+# creating person centered variables
+
+for (i in symptoms) {
+  new_name <- paste0(i, "_c")
+  mean_name <- paste0(i, "_mean")
+  PCS_z[new_name] <- PCS_z[i] - PCS_z[mean_name]
+}
+
+```
+
+```{r}
+PCS_between <- PCS_z |> 
+  dplyr::select(sex, dplyr::all_of(symptoms))
+```
+
+```{r}
+fit_between <- BGGM::estimate(PCS_between, formula = ~sex, type="continuous", impute = TRUE)
+```
+```{r}
+selected_between <- BGGM::select(fit_between)
+```
+
+```{r}
+plot(selected_between, edge_magnify = 5, node_size = 13)$plt
 ```
 
