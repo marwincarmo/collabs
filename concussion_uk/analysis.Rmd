@@ -29,6 +29,7 @@ library(officer)
 ```{r helper}
 source("helpers/bggm_missing.R")
 source("helpers/plot.select.R")
+source("helpers/roll_your_own.R")
 
 bridgestrenght <- function(x, ...){
   bridge(x, ...)$`Bridge Strength`
