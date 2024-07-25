@@ -70,6 +70,16 @@ symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,
 PCSimputed_z_between_mids <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids.rds")
 PCS_between <- PCS_z |> dplyr::select(sex, dplyr::ends_with("_mean"))
 
+## between concussion
+PCS_between_1 <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids1.rds")
+
+## between control
+PCS_between_0 <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids0.rds")
+
+## between control
+
+# within
+PCSimputed_z_between_mids <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids.rds")
 
 ```
 
@@ -128,7 +138,13 @@ dimnames(strength_between$results) <- list(symptoms_names)
 plot(strength_between) +
   theme_minimal()
 ```
+### Concussion
 
+```{r fit-between-concussion}
+fit_between_concussion <- bggm_missing(PCS_between_1, iter = 2000, method = "estimate", formula = ~sex, cores=8)
+saveRDS(fit_between_concussion, "out/fit_between_concussion.rds")
+fit_between <- readRDS("out/fit_between/fit_between_total.rds")
+```
 
 ## Network comparison (concussion vs. no concussion)
 
@@ -151,6 +167,7 @@ plot(sel_compare, edge_magnify = 5, node_size = 13)[[1]] +
 ```
 
 
+## Within networks
 
 
 
