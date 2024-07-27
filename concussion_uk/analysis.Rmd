@@ -18,11 +18,13 @@ flextable::set_flextable_defaults(font.size = 12, font.family = "Times New Roman
 library(BGGM)
 library(dplyr)
 library(ggplot2)
+library(ggridges)
 library(networktools)
 library(network)
 library(GGally)
 library(flextable)
 library(officer)
+library(stringr)
 ```
 
 
@@ -38,6 +40,60 @@ bridgestrenght <- function(x, ...){
 ei <- function(x,...){
      expectedInf(x,...)$step1
 }
+
+bstable <- function(x, cred = 0.95) {
+  
+  lb <- (1-cred) / 2
+  ub <- 1 - lb
+  
+  mu <-  apply( x$results, 1, mean)
+  p <- length(mu)
+  scale <- apply( x$results, 1, sd)
+  ci_lb <- apply( x$results, 1, quantile, lb)
+  ci_ub <- apply( x$results, 1, quantile, ub)
+  
+  res<- data.frame(Node = symptoms_names,
+                   Post.mean = round(mu, 3),
+                   Post.sd = round(scale, 3),
+                   Cred.lb = round(ci_lb, 3),
+                   Cred.ub = round(ci_ub, 3))
+  rownames(res) <- NULL
+  res
+}
+
+plotNet <- function(x) {
+  
+  p <- ncol(x)
+  diag(x) <- 0
+  net <- network::network(x)
+  
+  # edge weights
+  network::set.edge.value(x = net, attrname = "weights",
+                          value = x)
+  
+  # edge weights absolute
+  network::set.edge.value(x = net, attrname = "abs_weights",
+                          value = abs(x) * 5)
+  # edge colors
+  network::set.edge.attribute(x = net, attrname = "edge_color",
+                              value = ifelse(net %e% "weights" < 0,
+                                             "#D55E00",
+                                             "#009E73"))
+  e <- abs(as.numeric(x))
+  
+  plt <- GGally::ggnet2(net, edge.alpha = e[e != 0] / max(e),
+                        edge.size = "abs_weights",
+                        edge.color = "edge_color",
+                        node.size = 13,
+                        mode = "circle") +
+    geom_point(color = "black",
+               size = 14) +
+    geom_point(size = 13, color = "white")  +
+    guides(color = "none") +
+    geom_text(label = symptoms) 
+  plt
+  
+}
 ```
 
 ```{r table-customization}
@@ -46,7 +102,7 @@ big_border = fp_border(color="black", width = 2)
 small_border = fp_border(color="black", width = 1)
 
 my_theme <- function(x, ...) {
-    x <- colformat_double(x, big.mark = "", decimal.mark = ",", digits = 2)
+    x <- colformat_double(x, big.mark = "", decimal.mark = ".", digits = 2)
     x <- set_table_properties(x, width = 1, layout = "autofit")
     x <- border_remove(x)
     x <- hline_top( x, border = small_border, part = "all" )
@@ -65,6 +121,7 @@ data_dictionary <- readxl::read_excel("Data Dictionary.xlsx")
 
 symptoms <- names(PCS_z)[19:40]
 symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
+symptoms_dict <- setNames(symptoms_names, symptoms)
 
 # between
 PCSimputed_z_between_mids <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids.rds")
@@ -76,23 +133,50 @@ PCS_between_1 <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids1.rds")
 ## between control
 PCS_between_0 <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids0.rds")
 
-## between control
-
 # within
-PCSimputed_z_between_mids <- readRDS("out/imputed_datasets/PCSimputed_z_between_mids.rds")
+PCS_within <- readRDS("out/imputed_datasets/PCSimputed_z_within_mids.rds")
 
+## within concussion
+PCS_within_1 <- readRDS("out/imputed_datasets/PCSimputed_z_within_mids1.rds")
+
+## within control
+PCS_within_0 <- readRDS("out/imputed_datasets/PCSimputed_z_within_mids0.rds")
+
+```
+
+```{r}
+replace_symptoms <- function(string) {
+  for (short_name in names(symptoms_dict)) {
+    string <- str_replace_all(string, short_name, symptoms_dict[[short_name]])
+  }
+  string <- str_replace_all(string, "_[a-z]*", "")
+  return(string)
+}
 ```
 
 
 # Method
 
+
 ## Statistical analysis
 
-All analyses were conducted using R [@R], version `r getRversion()`.
+All analyses were conducted using R [@R], version `r getRversion()`. The network models were estimated with the Bayesian Gaussian Graphical Models (BGGM) package. The scores were standardized and analyzed as continuous.
 
-## Between networks
+### Between-person networks
 
 We estimate the Gaussian graphical model with all the symptoms averaged across all time points, controlling for the effect of sex, and including the whole sample. The results include the posterior mean and 95% credible interval for the edge weights estimates. Graphically, these relations are shown as a network plot. Additionally, we also compute the bridge strength of each symptom. It represents the absolute edge weights for each node, such that the value is a composite of all associations (positive or negative) a node has with other nodes.
+
+### Within-person networks
+
+In the within-person network model we investigate the associations between the symptoms at each measurement occasion, after subtracting out the person-average from each measurement. That is, first we scaled the symptoms across all the individuals and all measurement occasions. Then, calculated the mean person score in standardized units. Finally, subtracted each standardized score from their own average to obtain a person centered score. That way we can observe whether fluctuations around each participant's mean in one symptom are associated with fluctuations in this same participant's mean in another symptom. For example, we can examine if someone experiencing more than average vomiting at one measurement occasion would also experience more than average nausea at the same measurement occasion.
+
+### Individual longitudinal networks
+
+Our third analysis consisted of estimating individual longitudinal networks for each subject and then computing edge weights and bridge strength for each individual network. From these results we computed the frequencies that each node was selected as the most central (higher bridge strength) and the average edge weight. To obtain the latter, the individual's partial correlation matrices were transformed into z-scores and then averaged across all participants. The average z-scores were then transformed back into partial correlation coefficients and used to plot the networks.
+
+# Results
+
+## Between-person networks
 
 ### Total sample
 
@@ -102,6 +186,7 @@ We estimate the Gaussian graphical model with all the symptoms averaged across a
 fit_between <- readRDS("out/fit_between/fit_between_total.rds")
 ```
 
+### Edge weight
 
 ```{r select-between}
 selected_between <- BGGM::select(fit_between)
@@ -114,6 +199,7 @@ plot(selected_between, edge_magnify = 5, node_size = 13)$plt
 
 ```{r}
 summary(fit_between)$dat_results |> 
+  dplyr::mutate(Relation = replace_symptoms(Relation)) |> 
   dplyr::arrange(desc(abs(Post.mean))) |> 
   flextable() |> 
   my_theme()
@@ -130,45 +216,364 @@ strength_between <- roll_your_own2(fit_between,
 saveRDS(strength_between, "out/fit_between/strength_between_imp.rds")
 ```
 
+### Bridge strength
 
-```{r, dpi=300}
+```{r strength-between-plot, fig.height=6, fig.width=8,dpi=300}
 strength_between <- readRDS("out/fit_between/strength_between_imp.rds")
 dimnames(strength_between$results) <- list(symptoms_names)
 
 plot(strength_between) +
   theme_minimal()
 ```
+```{r strength-between-table}
+bstable(strength_between) |> 
+  flextable() |> 
+  my_theme()
+```
+
+
 ### Concussion
 
 ```{r fit-between-concussion}
-fit_between_concussion <- bggm_missing(PCS_between_1, iter = 2000, method = "estimate", formula = ~sex, cores=8)
-saveRDS(fit_between_concussion, "out/fit_between_concussion.rds")
-fit_between <- readRDS("out/fit_between/fit_between_total.rds")
+# fit_between_concussion <- bggm_missing(PCS_between_1, iter = 2000, method = "estimate", formula = ~sex, cores=16)
+# saveRDS(fit_between_concussion, "out/fit_between/fit_between_concussion.rds")
+
+fit_between_concussion <- readRDS("out/fit_between/fit_between_concussion.rds")
 ```
 
-## Network comparison (concussion vs. no concussion)
+### Edge weight
+
+
+```{r select-between-concussion}
+selected_between_concussion <- BGGM::select(fit_between_concussion)
+colnames(selected_between_concussion$object$Y) <- symptoms
+```
+
+```{r plot-between-concussion, fig.height=6.5, fig.width=8, dpi=300}
+plot(selected_between_concussion, edge_magnify = 5, node_size = 13)$plt 
+```
+```{r}
+summary(fit_between_concussion)$dat_results |> 
+  dplyr::mutate(Relation = replace_symptoms(Relation)) |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  flextable() |> 
+  my_theme()
+```
+
+```{r eval=FALSE}
+library(parallel)
+strength_between_concussion <- roll_your_own2(fit_between_concussion,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          cores=16,
+                          progress = TRUE)
+saveRDS(strength_between_concussion, "out/fit_between/strength_between_concussion.rds")
+```
+
+
+### Bridge strength
+
+
+```{r strength-between-concussion-plot, fig.height=6, fig.width=8,dpi=300}
+strength_between_concussion <- readRDS("out/fit_between/strength_between_concussion.rds")
+dimnames(strength_between_concussion$results) <- list(symptoms_names)
+
+plot(strength_between_concussion) +
+  theme_minimal()
+```
+
+```{r strength-between-concussion-table}
+bstable(strength_between_concussion) |> 
+  flextable() |> 
+  my_theme()
+```
+
+### Control
+
+```{r fit-between-control}
+# fit_between_control <- bggm_missing(PCS_between_0, iter = 2000, method = "estimate", formula = ~sex, cores=16)
+# saveRDS(fit_between_control, "out/fit_between/fit_between_control.rds")
+
+fit_between_control <- readRDS("out/fit_between/fit_between_control.rds")
+```
+
+### Edge weight
+
+```{r select-between-control}
+selected_between_control <- BGGM::select(fit_between_control)
+colnames(selected_between_control$object$Y) <- symptoms
+```
+
+```{r plot-between-control, fig.height=6.5, fig.width=8, dpi=300}
+plot(selected_between_control, edge_magnify = 5, node_size = 13)$plt 
+```
 
 ```{r}
-raw_data$concussion <- as.numeric(haven::as_factor(raw_data$concussion))
-concussion <- PCS_between[raw_data$concussion == 1, ]
-control <- PCS_between[raw_data$concussion == 0, ]
+summary(fit_between_control)$dat_results |> 
+  dplyr::mutate(Relation = replace_symptoms(Relation)) |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  flextable() |> 
+  my_theme()
 ```
 
+```{r eval=FALSE}
+library(parallel)
+strength_between_control <- roll_your_own2(fit_between_control,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          cores=16,
+                          progress = TRUE)
+saveRDS(strength_between_control, "out/fit_between/strength_between_control.rds")
+```
+### Bridge strength
 
-```{r warning=FALSE, fig.height=6.5, fig.width=8, dpi=300}
-fit_compare <- ggm_compare_estimate(concussion, control, formula = ~sex, impute = TRUE
-                                    )
+```{r strength-between-control-plot, fig.height=6, fig.width=8, dpi=300}
+strength_between_control <- readRDS("out/fit_between/strength_between_control.rds")
+dimnames(strength_between_control$results) <- list(symptoms_names)
 
-sum_compare <- summary(fit_compare)
-sel_compare <- BGGM::select(fit_compare)
+plot(strength_between_control) +
+  theme_minimal()
+```
 
-plot(sel_compare, edge_magnify = 5, node_size = 13)[[1]] + 
-  labs(title = "Concussion - Control")
+```{r strength-between-control-table}
+bstable(strength_between_control) |> 
+  flextable() |> 
+  my_theme()
 ```
 
 
 ## Within networks
 
+### Total sample
 
+```{r fit-within}
+# fit_within <- bggm_missing(PCS_within, iter = 2000, method = "estimate", formula = ~sex, cores=16)
+# saveRDS(fit_within, "out/fit_within/fit_within_total.rds")
+fit_within <- readRDS("out/fit_within/fit_within_total.rds")
+```
+
+
+```{r select-within}
+selected_within <- BGGM::select(fit_within)
+colnames(selected_within$object$Y) <- symptoms
+```
+
+```{r plot-within-total, fig.height=6.5, fig.width=8, dpi=300}
+plot(selected_within, edge_magnify = 5, node_size = 13)$plt 
+```
+
+```{r}
+summary(fit_within)$dat_results |> 
+  dplyr::mutate(Relation = replace_symptoms(Relation)) |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  flextable() |> 
+  my_theme()
+```
+
+```{r eval=FALSE}
+library(parallel)
+strength_within <- roll_your_own2(fit_within,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          cores=16,
+                          progress = TRUE)
+saveRDS(strength_within, "out/fit_within/strength_within_total.rds")
+```
+
+### Bridge strength
+
+```{r strength-within-plot, fig.height=6, fig.width=8, dpi=300}
+strength_within <- readRDS("out/fit_within/strength_within_total.rds")
+dimnames(strength_within$results) <- list(symptoms_names)
+
+plot(strength_within) +
+  theme_minimal()
+```
+
+```{r strength-within-table}
+bstable(strength_within) |> 
+  flextable() |> 
+  my_theme()
+```
+
+### Concussion
+
+```{r fit-within-concussion}
+# fit_within_concussion <- bggm_missing(PCS_within_1, iter = 2000, method = "estimate", formula = ~sex, cores=16)
+# saveRDS(fit_within_concussion, "out/fit_within/fit_within_concussion.rds")
+fit_within_concussion <- readRDS("out/fit_within/fit_within_concussion.rds")
+```
+
+
+```{r select-within-concussion}
+selected_within_concussion <- BGGM::select(fit_within_concussion)
+colnames(selected_within_concussion$object$Y) <- symptoms
+```
+
+```{r plot-within-concussion, fig.height=6.5, fig.width=8, dpi=300}
+plot(selected_within_concussion, edge_magnify = 5, node_size = 13)$plt 
+```
+
+```{r}
+summary(fit_within_concussion)$dat_results |> 
+  dplyr::mutate(Relation = replace_symptoms(Relation)) |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  flextable() |> 
+  my_theme()
+```
+
+```{r eval=FALSE}
+library(parallel)
+strength_within_concussion <- roll_your_own2(fit_within_concussion,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          cores=16,
+                          progress = TRUE)
+saveRDS(strength_within_concussion, "out/fit_within/strength_within_concussion.rds")
+```
+
+
+```{r strength-within-concussion-plot, fig.height=6, fig.width=8, dpi=300}
+strength_within_concussion <- readRDS("out/fit_within/strength_within_total.rds")
+dimnames(strength_within_concussion$results) <- list(symptoms_names)
+
+plot(strength_within_concussion) +
+  theme_minimal()
+```
+
+```{r strength-within-concussion-table}
+bstable(strength_within_concussion) |> 
+  flextable() |> 
+  my_theme()
+```
+
+### Control
+
+```{r fit-within-control}
+# fit_within_control <- bggm_missing(PCS_within_0, iter = 2000, method = "estimate", formula = ~sex, cores=16)
+# saveRDS(fit_within_control, "out/fit_within/fit_within_control.rds")
+fit_within_control <- readRDS("out/fit_within/fit_within_control.rds")
+```
+
+
+```{r select-within-control}
+selected_within_control <- BGGM::select(fit_within_control)
+colnames(selected_within_control$object$Y) <- symptoms
+```
+
+```{r plot-within-control, fig.height=6.5, fig.width=8, dpi=300}
+plot(selected_within_control, edge_magnify = 5, node_size = 13)$plt 
+```
+
+```{r}
+summary(fit_within_control)$dat_results |> 
+  dplyr::mutate(Relation = replace_symptoms(Relation)) |> 
+  dplyr::arrange(desc(abs(Post.mean))) |> 
+  flextable() |> 
+  my_theme()
+```
+
+```{r eval=FALSE}
+library(parallel)
+strength_within_control <- roll_your_own2(fit_within_control,
+                          FUN = bridgestrenght,
+                          select = TRUE,
+                          communities = symptoms,
+                          cores=16,
+                          progress = TRUE)
+saveRDS(strength_within_control, "out/fit_within/strength_within_control.rds")
+```
+
+### Bridge strength
+
+```{r strength-within-control-plot, fig.height=6, fig.width=8, dpi=300}
+strength_within_control <- readRDS("out/fit_within/strength_within_control.rds")
+dimnames(strength_within_control$results) <- list(symptoms_names)
+
+plot(strength_within_control) +
+  theme_minimal()
+```
+
+```{r strength-within-control-table}
+bstable(strength_within_control) |> 
+  flextable() |> 
+  my_theme()
+```
+
+## Grahical VAR (vector autoregression)
+
+A variety of methods for time series data. These particular models are VAR(1) models which are also known as time series chain graphical models.
+
+### Average contemporaneous network - Total sample
+
+```{r var-total}
+
+z_list <- readRDS("out/z_list.rds")
+sum_matrix <- Reduce("+", z_list)
+mean_matrix <- sum_matrix / length(z_list)
+
+avg_wgt <- BGGM::fisher_z_to_r(mean_matrix)
+colnames(avg_wgt) <- row.names(avg_wgt) <- symptoms
+```
+
+```{r, fig.height=6.5, fig.width=8, dpi=300}
+plotNet(avg_wgt) +
+  labs(title = "Average within person network - Total sample")
+```
+
+
+### Average contemporaneous network - Concussion
+
+```{r var-concussion}
+
+z_list_concussion <- readRDS("out/z_list_concussion.rds")
+
+mean_matrix_concussion <- Reduce("+", z_list_concussion) / length(z_list_concussion)
+
+avg_wgt_concussion <- BGGM::fisher_z_to_r(mean_matrix_concussion)
+
+colnames(avg_wgt_concussion) <- row.names(avg_wgt_concussion) <- symptoms
+```
+
+```{r, fig.height=6.5, fig.width=8, dpi=300}
+plotNet(avg_wgt_concussion) +
+  labs(title = "Average within person network - Concussion")
+```
+
+### Average contemporaneous network - Control
+
+```{r var-control}
+
+z_list_control <- readRDS("out/z_list_control.rds")
+
+mean_matrix_control <- Reduce("+", z_list_control) / length(z_list_control)
+
+avg_wgt_control <- BGGM::fisher_z_to_r(mean_matrix_control)
+
+colnames(avg_wgt_control) <- row.names(avg_wgt_control) <- symptoms
+```
+
+```{r , fig.height=6.5, fig.width=8, dpi=300}
+plotNet(avg_wgt_control) +
+  labs(title = "Average within person network - Control")
+```
+
+```{r table2}
+table2 <- readRDS("out/table2.rds")
+
+table2 |> 
+  dplyr::transmute(
+    Symptom = Node,
+    "Total sample" = paste0(freq_total, " (", round(pct_total, 2), ")"),
+    "Concussion" = paste0(freq_1, " (", round(pct_1, 2), ")"),
+    "Control" = paste0(freq_0, " (", round(pct_0, 2), ")")
+  ) |> 
+  flextable() |> 
+  my_theme()
+```
 
 # References
