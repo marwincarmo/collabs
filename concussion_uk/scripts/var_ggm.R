@@ -57,7 +57,7 @@ for (j in 2:ncol(pc_data)) {
 # 2 Estimate var for each subject -----------------------------------------
 
 # Get the unique ids
-unique_ids <- unique(pc_data$subject_id)[1:3]
+unique_ids <- unique(pc_data$subject_id)
 
 # Create an empty list to store results
 results_list <- list()
@@ -123,6 +123,9 @@ for (id in unique_ids) {
 #   saveRDS(results_noise[i], file_name)
 #   }
 
+## VAR for the whole sample
+
+mle_net <- var_estimate(pc_data[-1], progress = TRUE, iter = 5000)
 
 ## IDs that failed to converge ----
 
@@ -153,7 +156,7 @@ raw_data |>
 
 # 3 Estimate bridge strength ----------------------------------------------
 
-source("scripts/roll_your_own.R")
+source("helpers/roll_your_own.R")
 library(networktools)
 bridgestrenght <- function(x, ...){
   bridge(x, ...)$`Bridge Strength`
@@ -222,6 +225,11 @@ table2 <- y |>
                 pct_1 = freq_1/sum(freq_1, na.rm=TRUE)*100) |> 
   dplyr::arrange(factor(Node, levels = symptoms_names))
 
+saveRDS(table2, "out/table2.rds")
+
+# we might obtain table 3 estimating the within network as the subject difference
+# from their own mean.
+
 
 # 4 Average edge strength -------------------------------------------------
 
@@ -244,11 +252,13 @@ for (j in 1:length(converged)) {
 
 saveRDS(z_list, "out/z_list.rds")
 
+z_list <- readRDS("out/z_list.rds")
+
 sum_matrix <- Reduce("+", z_list)
 mean_matrix <- sum_matrix / length(z_list)
 
 avg_wgt <- BGGM::fisher_z_to_r(mean_matrix)
-sel <- BGGM::select(avg_wgt)
+
 ## Plot average within network ----
 
 plotNet <- function(x) {
