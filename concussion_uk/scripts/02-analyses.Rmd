@@ -24,7 +24,7 @@ library(ggplot2)
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> 
   janitor::clean_names()
 
-symptoms <- names(data_raw)[19:length(names(data_raw))]
+symptoms <- names(raw_data)[19:length(names(raw_data))]
 ```
 
 ### Creating NA cells for missing values
