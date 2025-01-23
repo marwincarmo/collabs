@@ -145,7 +145,8 @@ estimate_var_ggm(failed)
 
 raw_data |> 
   dplyr::filter(subject_id %in% failed,
-                concussion == 1) |> 
+               # concussion == 1
+                ) |> 
   dplyr::with_groups(subject_id, dplyr::summarise, n = dplyr::n()) |> 
   dplyr::arrange(desc(n)) |> 
   print(n = Inf)
