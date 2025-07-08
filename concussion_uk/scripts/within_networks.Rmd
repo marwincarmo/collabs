@@ -333,3 +333,14 @@ plt <- ggnet2(net, edge.alpha = e[e != 0] / max(e),
 plt
 ```
 
+## Temporal network
+
+```{r}
+mle_net <- var_estimate(pc_data[, -c(1:3)], progress = TRUE, iter = 5000)
+
+sel <- BGGM::select(mle_net)
+
+qgraph(sel$beta_weighted_adj, legend.cex=0.4, details=TRUE, legend=TRUE, nodeNames = symptoms_names,
+       theme='colorblind', negDashed=FALSE)
+```
+

@@ -96,7 +96,7 @@ for (id in unique_ids) {
   
     # Store the result in the list with id as the name
     results_list[[as.character(id)]] <- result
-  
+
     # Remove the intermediate object to free up memory
     rm(sub_df)
     gc() # Run garbage collection

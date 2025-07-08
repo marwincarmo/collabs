@@ -19,7 +19,7 @@ library(dplyr)
 ```{r}
 raw_data <- haven::read_sav("../data/PCSNetworkModelAnalysis.sav") |> 
   janitor::clean_names()
-data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
+# data_dictionary <- readxl::read_excel("../Data Dictionary.xlsx")
 symptoms <- names(raw_data)[19:length(names(raw_data))]
 symptoms_names <- data_dictionary[data_dictionary$`Variable Name` %in% symptoms,]$`Variable Label`
 long_data <- raw_data |> 

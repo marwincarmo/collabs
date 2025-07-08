@@ -138,14 +138,14 @@ roll_your_own2 <- function(object,
     
     sel <- BGGM::select(object, cred = cred)
     adj <- if("var_estimate" %in% class(object)) {
-      sel$pcor_adj
+      sel$beta_adj
     } else {
       sel$adj
       }
     
   } else {
     
-    p <- ncol(object$pcor_mat)
+    p <- ncol(object$beta_mu)
     adj <- matrix(1, p, p)
     
   }
@@ -157,7 +157,7 @@ roll_your_own2 <- function(object,
   }
   
   pcors <- if("var_estimate" %in% class(object)) {
-    object$fit$pcors[, , 51:(iter + 50)]
+    object$fit$beta[,,51:(object$iter +50)]
   } else {
     object$post_samp$pcors[, , 51:(iter + 50)]
   }

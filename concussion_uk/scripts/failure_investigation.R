@@ -66,6 +66,11 @@ low_n <- pc_data |>
   dplyr::pull(subject_id)
 # There were 58/113
 
+### Testing
+library(BGGM)
+sub_df <- subset(pc_data, subject_id == 45)
+result <- var_estimate(sub_df[,-1], progress = TRUE, iter = 5000)
+
 ## Now looking at the other cases
 
 multicol <- pc_data |> 
@@ -228,3 +233,13 @@ high_cor_count_df
 # 8 attn     mem             28
 # 9 fog      mem             27
 # 10 attn     slw             26
+
+## How many responses were obtained from control and concussion groups
+
+raw_data |> 
+  dplyr::filter(subject_id %in% low_n) |> 
+  #dplyr::filter(subject_id %in% failed) |> 
+  dplyr::with_groups(c(concussion, subject_id), 
+                     dplyr::count) |> 
+  #psych::describe()
+  psych::describeBy( group = "concussion")
