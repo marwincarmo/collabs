@@ -6,3 +6,9 @@
 .quarto
 results.rds
 out/network_orthogonal.RData
+# Ignore only specific large files
+concussion_uk/cache/example-BGGM-ggm_compare_estimate-23_d1accee452dd06ad86648225e048246a.RData
+concussion_uk/out/strength_within_control.rds
+concussion_uk/out/strength_within.rds
+concussion_uk/out/imputed_datasets/PCSimputed_z_mids1.rds
+concussion_uk/out/strength_within_concussion.rds
