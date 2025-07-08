@@ -4,3 +4,5 @@
 .httr-oauth
 .DS_Store
 .quarto
+results.rds
+out/network_orthogonal.RData
