@@ -58,7 +58,7 @@ sxd_imp_std <- sxd_imp |>
 # 4 mlVAR -----------------------------------------------------------------
 
 
-vars <- colnames(sxd_imp[,3:9])
+vars <- colnames(sxd_imp[,3:8])
 
 fit_mlvar <- mlVAR(data=sxd_imp, vars = vars, idvar = "Main.SubjectIDNum",
                    contemporaneous = "orthogonal", temporal = "orthogonal", estimator = "lmer", scale = TRUE)
@@ -154,7 +154,25 @@ centrality_mlvar <- function(fit,
 
 centrality_res <- centrality_mlvar(fit_mlvar)
 
+# Select the participants you need
+selected_participants_ids <- c()
 
+# Here we will find the index of each of these participants out of the 122
+ID <- which(unique(sxd_imp$Main.SubjectIDNum) %in% selected_participants_ids)
+
+# Initiate an empty list
+subsetted_list <- list()
+
+# This loop will subset the results for these selected indices
+# The resulting list will be assigned to `subsetted_list`
+# This list can be parsed to the freq_central function
+
+for (name in names(centrality_res)) {
+  # Subset the inner list using the provided participant_indices
+  subsetted_list[[name]] <- centrality_res[[name]][ids]
+}
+
+centrality_res
 #
 # Function to summarize the most frequent central symptom
 freq_central <- function(centrality_output, var_names) {
@@ -242,102 +260,100 @@ dev.off()
 
 
 # 7 dcnet ------------------------------------------------------------------
-## library(dcnet)
-## install.packages("data.table")
-## library(data.table)
+library(dcnet)
 
-## head(sxd)
+head(sxd)
 
-## N <- length(unique(sxd_imp_std$id))
-## N
+N <- length(unique(sxd_imp_std$id))
+N
 
-## ids <- unique(sxd_imp_std$id)
-## tl <- 14
-## groupvec <- rep(seq_len(N),  each = tl)
-## dt <- data.table::data.table(sxd_imp_std )
-## variables <- names(sxd_imp_std)[3:8]
+ids <- unique(sxd_imp_std$id)
+tl <- 14
+groupvec <- rep(seq_len(N),  each = tl)
+dt <- data.table::data.table(sxd_imp_std )
+variables <- names(sxd_imp_std)[3:8]
 
-## tsdat <- lapply(ids, function(x) dt[dt$id == x, .SD, .SDcols = variables] )
-## tsdat
+tsdat <- lapply(ids, function(x) dt[dt$id == x, .SD, .SDcols = variables] )
+tsdat
 
-## #devtools::load_all(path = "./")
+#devtools::load_all(path = "./")
 
-## fit_init <- dcnet(data = tsdat, J = N, group = groupvec, S_pred = NULL,
-##                   standardize_data = FALSE,
-##                   parameterization = "CCC",
-##                   iterations = 30000,
-##                   sampling_algorithm = "variational",
-##                   meanstructure = "VAR",
-##                   chains = 4,
-##                   eta=0.1,
-##                   threads = 8,
-##                   grainsize = 5,
-##                   init = 0)
+fit_init <- dcnet(data = tsdat, J = N, group = groupvec, S_pred = NULL,
+                  standardize_data = FALSE,
+                  parameterization = "CCC",
+                  iterations = 30000,
+                  sampling_algorithm = "variational",
+                  meanstructure = "VAR",
+                  chains = 4,
+                  eta=0.1,
+                  threads = 8,
+                  grainsize = 5,
+                  init = 0)
 
-## fit_init$model_fit$output()
-## grep("vec_phi_fixed", colnames(fit_init$model_fit$draws()))
-## fit_init$model_fit$draws()[, 3062:3070]
-## variables
-## phi <- matrix(colMeans(fit_init$model_fit$draws()[, grep("vec_phi_fixed", colnames(fit_init$model_fit$draws()))]), ncol = length(variables))
-## round(phi, 4)
-## #pdf(file = "~/Nextcloud/Documents/eric.pdf")
-## qgraph::qgraph(phi, labels = variables)
-## #dev.off()
+fit_init$model_fit$output()
+grep("vec_phi_fixed", colnames(fit_init$model_fit$draws()))
+fit_init$model_fit$draws()[, 3062:3070]
+variables
+phi <- matrix(colMeans(fit_init$model_fit$draws()[, grep("vec_phi_fixed", colnames(fit_init$model_fit$draws()))]), ncol = length(variables))
+round(phi, 4)
+#pdf(file = "~/Nextcloud/Documents/eric.pdf")
+qgraph::qgraph(phi, labels = variables)
+#dev.off()
 
-## fit <- dcnet(
-##     data = tsdat, parameterization = "CCC", J = N,
-##     group = groupvec, standardize_data = FALSE,
-##     init = fit_init$model_fit,
-##     meanstructure = "VAR",
-##     iterations = 50000,
-##     sampling_algorithm = "variational",
-##     algorithm = "fullrank", ## fullrank should be less biased
-##     grad_samples = 1,
-##     elbo_samples = 150,
-##     eta = 0.1,
-##     adapt_iter = 100,
-##     grainsize = 40,
-##     chains = 4,
-##     threads_per_chain = 4)
+fit <- dcnet(
+    data = tsdat, parameterization = "DCChs", J = N,
+    group = groupvec, standardize_data = FALSE,
+    init = fit_init$model_fit,
+    meanstructure = "VAR",
+    iterations = 50000,
+    sampling_algorithm = "variational",
+    algorithm = "fullrank", ## fullrank should be less biased
+    grad_samples = 1,
+    elbo_samples = 150,
+    eta = 0.1,
+    adapt_iter = 100,
+    grainsize = 40,
+    chains = 4,
+    threads_per_chain = 4)
 
 
 
-##     # Simulate data:
-##      Model <- mlVARsim(nPerson = 50, nNode = 3, nTime = 50, lag=1)
-##      Model$Data = Model$Data*10
-##      # Estimate using correlated random effects:
-##      fit1 <- mlVAR(Model$Data, vars = Model$vars, idvar = Model$idvar, lags = 1, temporal = "correlated")
-## summary(fit1)
+    # Simulate data:
+     Model <- mlVARsim(nPerson = 50, nNode = 3, nTime = 50, lag=1)
+     Model$Data = Model$Data*10
+     # Estimate using correlated random effects:
+     fit1 <- mlVAR(Model$Data, vars = Model$vars, idvar = Model$idvar, lags = 1, temporal = "correlated")
+summary(fit1)
 
-## N <- 50
-## N
-## ids <- unique(Model$Data$ID)/10
-## ids
-## tl <- 50
-## groupvec <- rep(seq_len(N),  each = tl)
-## groupvec
-## dt <- data.table::data.table(Model$Data )
-## dt$ID=dt$ID/10
-## dt
-## variables <- names(dt)[1:3]
-## variables
+N <- 50
+N
+ids <- unique(Model$Data$ID)/10
+ids
+tl <- 50
+groupvec <- rep(seq_len(N),  each = tl)
+groupvec
+dt <- data.table::data.table(Model$Data )
+dt$ID=dt$ID/10
+dt
+variables <- names(dt)[1:3]
+variables
 
-## tsdat <- lapply(ids, function(x) dt[dt$ID == x, .SD, .SDcols = variables] )
-## tsdat
+tsdat <- lapply(ids, function(x) dt[dt$ID == x, .SD, .SDcols = variables] )
+tsdat
 
-## #devtools::load_all(path = "./")
+#devtools::load_all(path = "./")
 
-## fit_init <- dcnet(data = tsdat, J = N, group = groupvec, S_pred = NULL,
-##                   standardize_data = TRUE,
-##                   parameterization = "CCC",
-##                   iterations = 30000,
-##                   sampling_algorithm = "variational",
-##                   meanstructure = "VAR",
-##                   chains = 4,
-##                   eta=0.1,
-##                   threads = 8,
-##                   grainsize = 5,
-##                   init = 0)
+fit_init <- dcnet(data = tsdat, J = N, group = groupvec, S_pred = NULL,
+                  standardize_data = TRUE,
+                  parameterization = "CCC",
+                  iterations = 30000,
+                  sampling_algorithm = "variational",
+                  meanstructure = "VAR",
+                  chains = 4,
+                  eta=0.1,
+                  threads = 8,
+                  grainsize = 5,
+                  init = 0)
 
-## phi <- matrix(colMeans(fit_init$model_fit$draws()[, grep("vec_phi_fixed", colnames(fit_init$model_fit$draws()))]), ncol = length(variables))
-## round(phi, 4)
+phi <- matrix(colMeans(fit_init$model_fit$draws()[, grep("vec_phi_fixed", colnames(fit_init$model_fit$draws()))]), ncol = length(variables))
+round(phi, 4)
