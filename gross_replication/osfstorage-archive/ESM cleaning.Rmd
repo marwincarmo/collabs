@@ -1,0 +1,929 @@
+---
+title: "ESM cleaning"
+author: "Stephen Raynes"
+date: "6/28/2022"
+output: html_document
+---
+
+#Setup
+```{r Libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(car)
+library("ggpubr")
+library("corrplot")
+
+```
+
+```{r CSVs}
+#load in most recent csv's 
+Pre <- read_csv("/Users/arthurraynes/Downloads/ESM+Pre-Survey_November+30,+2022_17.43.csv")
+
+Instruction <- read_csv("/Users/arthurraynes/Downloads/INSTRUCTION 2.csv")
+Corpus <- read_csv("/Users/arthurraynes/Downloads/Corpus 6.csv")
+
+Post <- read_csv("/Users/arthurraynes/Downloads/ESM+Post-Survey_November+30,+2022_17.46.csv")
+
+```
+
+
+Rename corpus and instruction columns first
+```{r Rename Columns}
+Instruction <-
+  Instruction %>% 
+  dplyr::rename(
+         participantID = ...6,
+         participantNUM = Survey,
+         PID = `Question 5`
+         )
+
+Corpus <-
+  Corpus %>% 
+  dplyr::rename(
+         duration = ...4,
+         finished = ...5,
+         participantID = ...6,
+         participantNUM = Survey,
+         attention = Q2,
+         wb = Q3,
+         inner_speech = Q4,
+         clarity = Q5, 
+         valence = Q6,
+         reaction = Q7,
+         interesting = Q8,
+         inner_experience = Q9...18,
+         no_inner_speech_clarity = Q10,
+         no_inner_speech_valence = Q11,
+         no_inner_speech_reaction = Q12,
+         no_inner_speech_interesting = Q13,
+         activity = Q14...24)
+
+```
+
+
+```{r Remove rows}
+
+Pre <-
+  Pre[-(1:2),]
+Instruction <-
+  Instruction[-(1:2),]
+Corpus <-
+  Corpus[-(1:2),]
+Post <-
+  Post[-(1:2),]
+
+```
+
+```{r Remove columns}
+Pre <-
+  Pre %>% 
+  dplyr::select(-Status,
+                -Finished,
+                -IPAddress,
+                -RecipientLastName,
+                -RecipientFirstName,
+                -RecipientEmail,
+                -ExternalReference,
+                -LocationLatitude,
+                -LocationLongitude,
+                -DistributionChannel,
+                -UserLanguage)
+
+Instruction <-
+ Instruction %>% 
+  dplyr::select(-...1,
+                -...2,
+                -...3,
+                -...4,
+                -...5,
+                -...7,
+                -...8,
+                -`Question 1`,
+                -`Question 2`,
+                -`Question 3`,
+                -`Question 4`)
+
+Corpus <-
+  Corpus %>% 
+  dplyr::select(-...7,
+                -...8,
+                -`Question 1`)
+
+Post <-
+  Post %>% 
+  dplyr::select(-Status,
+                -Finished,
+                -IPAddress,
+                -RecipientLastName,
+                -RecipientFirstName,
+                -RecipientEmail,
+                -ExternalReference,
+                -LocationLatitude,
+                -LocationLongitude,
+                -DistributionChannel,
+                -UserLanguage)
+
+```
+
+
+```{r Combine ESM Parts}
+
+#ensure these are all the same
+length(unique(Corpus$participantID))
+length(unique(Corpus$participantNUM))
+
+length(unique(Instruction$participantID))
+length(unique(Instruction$participantNUM))
+
+#differences likely due to people who missed the instruction but did the rest of the ESM... there's not a way to link pre, corpus, and post without PID - which was collected in instruction but not corpus. Therefore I need to remove those people. Looks like that was 57 people. 
+
+phone <-  Corpus %>% 
+  left_join(Instruction, by = "participantID")
+
+length(unique(phone$participantID))
+length(unique(phone$PID))
+
+unique(Corpus$participantID)
+unique(Instruction$participantID)
+
+#this seems to work. Then can delete it if PID is NA 
+phone <- phone[!(is.na(phone$PID)), ]
+length(unique(phone$PID))
+
+unique(phone$PID)
+
+
+##clean up PID so it's all the same - repeat this with Qualtrics parts
+#remove tests
+phone <- 
+  phone %>%
+  filter(PID != "Test") %>%
+  filter(PID != "Madeleine")
+#standardize names
+phone$PID <- toupper(phone$PID) #make letters all uppercase
+phone$PID <- gsub('A', '', phone$PID) # remove the "A" since many didn't do this 
+phone$PID <- gsub('PID：', '', phone$PID)
+phone$PID <- gsub('UCSD ', '', phone$PID)
+phone$PID[phone$PID=="(16353844) I WS NOT PRESENT, I WS FEELING -1, I WS EXPERIENCING INNER SPEECH, I WS EXPERIENCING HUNGER, MY INNER SPEECH WS SOMEWHT CLER (5), I’D RTE MY INNER SPEECH  -1, I FEEL  MODERTE RECTION TO IT (3), I PERSONLLY DON’T FIND IT VERY INTERESTING (1), I WS BEING “SOCIL” (I WS IN N ONLINE ZOOM MEETING FOR  GROUP PROJECT)"] = "16353844"
+phone$PID[phone$PID=="16812819"] = "15812819" #specific case of student emailing to say they typed in incorrect PID 
+
+
+unique(phone$PID)
+
+
+#this is ESM N before data cleaning 
+length(unique(phone$PID))
+
+
+
+```
+
+```{r Combine pre/post parts}
+
+##Pre
+Pre <-
+  Pre %>% 
+  dplyr::rename(
+        PID = pid
+         )
+
+unique(Pre$PID)
+
+#clean up PID so it's all the same
+
+#remove tests
+Pre <- 
+  Pre %>%
+  filter(PID != "Test") %>%
+  filter(PID != "madeleine") %>%
+  filter(PID != "AAAAAAAA") %>%
+  filter(PID != "asdfasdasd") %>%
+  filter(PID != "asdfasdf") %>%
+  filter(PID != "NA") 
+
+#standardize names
+Pre$PID <- toupper(Pre$PID) #make letters all uppercase
+Pre$PID <- gsub('A', '', Pre$PID) # remove the "A" since many didn't do this 
+
+unique(Pre$PID)
+
+Pre$PID <- gsub('PID：', '', Pre$PID)
+Pre$PID <- gsub('UCSD ', '', Pre$PID)
+
+unique(Pre$PID)
+
+
+#this is PRE N before data cleaning 
+length(unique(Pre$PID))
+
+##Post
+
+Post <-
+  Post %>% 
+  dplyr::rename(
+        PID = pid
+         )
+
+##clean up PID so it's all the same 
+unique(Post$PID)
+#remove tests
+Post <- 
+  Post %>%
+  filter(PID != "Test") %>%
+  filter(PID != "Madeleine") %>%
+  filter(PID != "AAAAAAAA") %>%
+  filter(PID != "asdfasdasd") %>%
+  filter(PID != "asdfasdf") %>%
+  filter(PID != "NA") 
+
+#standardize names
+Post$PID <- toupper(Post$PID) #make letters all uppercase
+Post$PID <- gsub('A', '', Post$PID) # remove the "A" since many didn't do this 
+
+unique(Post$PID)
+
+#this is POST N before data cleaning 
+length(unique(Post$PID))
+
+
+
+##Combine Pre/Post by PID
+Qualtrics <-
+  merge(x = Pre,
+        y = Post,
+        by = "PID",
+        no.dups = F)
+
+Qualtrics <- Qualtrics[!(is.na(Qualtrics$PID)), ]
+
+length(unique(Qualtrics$PID))
+
+```
+
+
+
+#Clean pre/post parts
+
+Clean pre/post before combining everything together:
+```{r Incompletes} 
+
+#Pre-reg doesn't say 100% complete, so don't use this; incompletes will be filtered out when combining parts anyway 
+
+# 
+# Qualtrics$Progress.x <-
+#   as.numeric(as.character(Qualtrics$Progress.x))
+# Qualtrics$Progress.y <-
+#   as.numeric(as.character(Qualtrics$Progress.y))
+# 
+# 
+# Qualtrics <- 
+#   Qualtrics %>%
+#   filter(Progress.x > 26) %>% #to keep people who didn't click to last page 
+#   filter(Progress.y > 26)
+# 
+# 
+# unique(Qualtrics$PID)
+```
+
+TIME TO COMPLETE STUDY - just for qualtrics
+Didn't say in pre-reg I'd do this so ignore
+```{r Duration for Qualtrics}
+
+# ##Duration in minutes
+# Qualtrics$`Duration (in seconds).x` <- as.numeric(Qualtrics$`Duration (in seconds).x`)
+# Qualtrics$`Duration (in seconds).y` <- as.numeric(Qualtrics$`Duration (in seconds).y`)
+# 
+# 
+# 
+# #3 +/- SD away from mean 
+# dur.posSD.1 <- mean(Qualtrics$`Duration (in seconds).x`) +
+#   3*sd(Qualtrics$`Duration (in seconds).x`)
+# dur.negSD.1 <- mean(Qualtrics$`Duration (in seconds).x`) -
+#   3*sd(Qualtrics$`Duration (in seconds).x`)
+# 
+# dur.posSD.2 <- mean(Qualtrics$`Duration (in seconds).y`) +
+#   3*sd(Qualtrics$`Duration (in seconds).y`)
+# dur.negSD.2 <- mean(Qualtrics$`Duration (in seconds).y`) -
+#   3*sd(Qualtrics$`Duration (in seconds).y`)
+# 
+# 
+# #remove anyone who is above 3SD from mean 
+# 
+# Qualtrics <-
+#   Qualtrics %>% 
+#   mutate(duration.1 = ifelse(`Duration (in seconds).x`> dur.posSD.1 | 
+#                              `Duration (in seconds).x`< dur.negSD.1, 1, 0),
+#        duration.2 = ifelse(`Duration (in seconds).y`> dur.posSD.2 | 
+#                              `Duration (in seconds).y`< dur.negSD.2, 1, 0))
+# 
+# duration.fail<-
+#   Qualtrics %>% 
+#   filter(duration.1 > 0 | duration.2 > 0 ) %>%
+#   pull(PID)
+# 
+# length(duration.fail)
+# 
+# Qualtrics <-
+#   Qualtrics %>% 
+#   filter(!PID %in% duration.fail)
+
+
+```
+
+```{r Validation}
+# phone$VAL1 - pre integrity - 1 or 4 are top 2
+# phone$VAL2 - post integrity - 1 or 4 are top 2 
+
+Qualtrics <-
+  Qualtrics %>% 
+  mutate(validation = ifelse(((VAL1 == "1" | VAL1 == "4") &
+                              (VAL2 == "1" | VAL2 == "4")
+                             ),0,1))
+
+#failed validation check (note I did 1 OR 2, for BOTH parts, above)
+validation.fail<-
+  Qualtrics %>% 
+  filter(validation > 0) %>%
+  pull(PID)
+
+length(validation.fail)
+
+Qualtrics <-
+  Qualtrics %>% 
+  filter(!PID %in% validation.fail)
+
+
+length(unique(Qualtrics$PID))
+
+```
+
+Hearing about study - have question, but didn't include in pre-reg so ignore 
+```{r Hear about study}
+#hear_about_study - in post
+
+# Qualtrics$hear_about_study <- as.numeric(Qualtrics$hear_about_study)
+# 
+# hear.fail<-
+#   Qualtrics %>% 
+#   filter(hear_about_study < 2) %>%
+#   pull(PID)
+# 
+# length(hear.fail)
+# 
+# Qualtrics <-
+#   Qualtrics %>% 
+#   filter(!PID %in% hear.fail)
+
+
+```
+
+
+ATTENTION CHECKS 
+```{r Catch Questions}
+
+# Qualtrics$personality_28 - 0
+# Qualtrics$personality_51 - 0
+# Qualtrics$ffmq_16 - 1
+
+#rename attention checks so we can find them
+Qualtrics <-
+  Qualtrics %>% 
+  dplyr::rename(att.1 = personality_28,
+         att.2 = personality_51,
+         att.3 = ffmq_16)
+
+#recode as 0 and 1
+Qualtrics <-
+  Qualtrics %>%
+  mutate(att.1 = ifelse(att.1 == "0", 0, 1),
+         att.2 = ifelse(att.2 == "0", 0, 1),
+         att.3 = ifelse(att.3 == "1", 0, 1))
+
+
+#create total attention fail score
+Qualtrics <-
+  Qualtrics %>% 
+  mutate(att.1 = as.numeric(att.1),
+         att.2 = as.numeric(att.2), 
+         att.3 = as.numeric(att.3),
+         att.total = (att.1 + att.2 + att.3))
+
+
+#count of fails and remove
+att.fail <-
+  Qualtrics %>% 
+  filter(att.total > 1) %>% 
+  pull(PID)
+
+length(att.fail)
+
+Qualtrics <-
+  Qualtrics %>% 
+  filter(!PID %in% att.fail)
+
+length(unique(Qualtrics$PID))
+
+```
+
+
+Exclude people with 0 inner speech prompts
+```{r No Inner Speech prompts}
+# 1 = "Inner Speech"
+# 2= "No Inner Speech"
+
+#make inner speech 0 and numeric to filter it easier 
+phone$inner_speech[phone$inner_speech==1] = 0 #inner speech
+phone$inner_speech[phone$inner_speech==2] = 1 #no inner speech 
+phone$inner_speech <- as.numeric(phone$inner_speech)
+
+
+#inner speeech counts per person, before filtering
+prompts<- phone %>%
+  group_by(participantID) %>%
+ summarise(n = length(participantID), 
+           InSp=length(inner_speech[inner_speech==0]),
+           NoInSp=length(inner_speech[inner_speech==1])) %>%
+  arrange(n)
+prompts
+
+
+#filter
+prompt.fail <-
+ phone %>%
+   group_by(participantID) %>%
+   filter(length(inner_speech[inner_speech==0])==0) %>%
+  pull(unique(participantID))
+#how many participants had 0 inner speech prompts
+length(unique(prompt.fail))
+#delete them
+phone <-
+  phone %>% 
+  filter(!participantID %in% prompt.fail)
+
+
+#after filter
+prompts<- phone %>%
+  group_by(participantID) %>%
+ summarise(n = length(participantID), 
+           InSp=length(inner_speech[inner_speech==0]),
+           NoInSp=length(inner_speech[inner_speech==1])) %>%
+  arrange(n)
+prompts
+
+```
+
+```{r Under-age}
+
+#Age 
+
+#recode dropdown input answers
+Qualtrics$age <-
+  as.character(Qualtrics$age)
+#numbers are getting confusing with overlaps (i.e. it's changing 1 to 18  and then it repeats 18 with the other thing)
+#so have to first change to letters to avoid overlap
+
+Qualtrics$age[Qualtrics$age == "1"] <- "a" 
+Qualtrics$age[Qualtrics$age == "2"] <- "b"
+Qualtrics$age[Qualtrics$age == "3"] <- "c"
+Qualtrics$age[Qualtrics$age == "4"] <- "d"
+Qualtrics$age[Qualtrics$age == "5"] <- "e"
+Qualtrics$age[Qualtrics$age == "6"] <- "f"
+Qualtrics$age[Qualtrics$age == "7"] <- "g"
+Qualtrics$age[Qualtrics$age == "8"] <- "h"
+Qualtrics$age[Qualtrics$age == "9"] <- "i"
+Qualtrics$age[Qualtrics$age == "10"] <- "j"
+Qualtrics$age[Qualtrics$age == "11"] <- "k"
+Qualtrics$age[Qualtrics$age == "12"] <- "l"
+Qualtrics$age[Qualtrics$age == "13"] <- "m"
+Qualtrics$age[Qualtrics$age == "14"] <- "n"
+Qualtrics$age[Qualtrics$age == "15"] <- "o"
+Qualtrics$age[Qualtrics$age == "16"] <- "p"
+Qualtrics$age[Qualtrics$age == "17"] <- "q"
+Qualtrics$age[Qualtrics$age == "18"] <- "r"
+Qualtrics$age[Qualtrics$age == "19"] <- "s"
+Qualtrics$age[Qualtrics$age == "20"] <- "t"
+Qualtrics$age[Qualtrics$age == "21"] <- "u"
+Qualtrics$age[Qualtrics$age == "22"] <- "v"
+Qualtrics$age[Qualtrics$age == "23"] <- "w"
+Qualtrics$age[Qualtrics$age == "24"] <- "x"
+Qualtrics$age[Qualtrics$age == "25"] <- "y"
+Qualtrics$age[Qualtrics$age == "26"] <- "z"
+Qualtrics$age[Qualtrics$age == "27"] <- "aa"
+Qualtrics$age[Qualtrics$age == "28"] <- "bb"
+Qualtrics$age[Qualtrics$age == "29"] <- "cc"
+Qualtrics$age[Qualtrics$age == "30"] <- "dd"
+Qualtrics$age[Qualtrics$age == "31"] <- "ee"
+Qualtrics$age[Qualtrics$age == "32"] <- "ff"
+Qualtrics$age[Qualtrics$age == "33"] <- "gg"
+Qualtrics$age[Qualtrics$age == "34"] <- "hh"
+Qualtrics$age[Qualtrics$age == "35"] <- "ii"
+#now can change letters to numbers without overlap thing
+Qualtrics$age[Qualtrics$age == "a"] <- "13"
+Qualtrics$age[Qualtrics$age == "b"] <- "14"
+Qualtrics$age[Qualtrics$age == "c"] <- "15"
+Qualtrics$age[Qualtrics$age == "d"] <- "16"
+Qualtrics$age[Qualtrics$age == "e"] <- "17"
+Qualtrics$age[Qualtrics$age == "f"] <- "18"
+Qualtrics$age[Qualtrics$age == "g"] <- "19"
+Qualtrics$age[Qualtrics$age == "h"] <- "20"
+Qualtrics$age[Qualtrics$age == "i"] <- "21"
+Qualtrics$age[Qualtrics$age == "j"] <- "22"
+Qualtrics$age[Qualtrics$age == "k"] <- "23"
+Qualtrics$age[Qualtrics$age == "l"] <- "24"
+Qualtrics$age[Qualtrics$age == "m"] <- "25"
+Qualtrics$age[Qualtrics$age == "n"] <- "26"
+Qualtrics$age[Qualtrics$age == "o"] <- "27"
+Qualtrics$age[Qualtrics$age == "p"] <- "28"
+Qualtrics$age[Qualtrics$age == "q"] <- "29"
+Qualtrics$age[Qualtrics$age == "r"] <- "30"
+Qualtrics$age[Qualtrics$age == "s"] <- "31"
+Qualtrics$age[Qualtrics$age == "t"] <- "32"
+Qualtrics$age[Qualtrics$age == "u"] <- "33"
+Qualtrics$age[Qualtrics$age == "v"] <- "34"
+Qualtrics$age[Qualtrics$age == "w"] <- "35"
+Qualtrics$age[Qualtrics$age == "x"] <- "36"
+Qualtrics$age[Qualtrics$age == "y"] <- "37"
+Qualtrics$age[Qualtrics$age == "z"] <- "38"
+Qualtrics$age[Qualtrics$age == "aa"] <- "39"
+Qualtrics$age[Qualtrics$age == "bb"] <- "40"
+Qualtrics$age[Qualtrics$age == "cc"] <- "41"
+Qualtrics$age[Qualtrics$age == "dd"] <- "42"
+Qualtrics$age[Qualtrics$age == "ee"] <- "43"
+Qualtrics$age[Qualtrics$age == "ff"] <- "44"
+Qualtrics$age[Qualtrics$age == "gg"] <- "45"
+Qualtrics$age[Qualtrics$age == "hh"] <- "46"
+Qualtrics$age[Qualtrics$age == "ii"] <- "47"
+
+Qualtrics$age <- as.numeric(Qualtrics$age)
+
+psych::describe(Qualtrics$age)
+
+#unclear what the NA's here are... just ignore 
+age<-group_by(Qualtrics, age) %>%
+ dplyr::summarise(n = length(age)) %>%
+   arrange(desc(age))
+
+
+
+#remove participants who are under 18 (should be nobody)
+Qualtrics <-
+  Qualtrics %>% 
+  mutate(age.failure = ifelse(age < 18,1,0))
+
+
+age.fail<-
+  Qualtrics %>% 
+  filter(age.failure > 0) %>%
+  pull(PID)
+
+length(age.fail)
+
+Qualtrics <-
+  Qualtrics %>% 
+  filter(!PID %in% age.fail)
+
+```
+
+exclusion table - sort of easier to just not do that for this study
+```{r Exclusion Table}
+
+# #N after participant data cleaning
+# ending<- nrow(Qualtrics)
+# 
+# #horizontal table
+# exclusion_table <- matrix(c(
+#   starting,
+#  paste0("(", length(incomplete.fail), ")"),
+#  paste0("(", length(attention.fail), ")"),
+#   paste0("(", length(subjective.validity.fail), ")"),
+#   paste0("(", length(task.engagement.fail), ")"),
+#  paste0("(", length(duration.fail), ")"),
+#  paste0("(", length(outlier.fail), ")"),
+#  paste0("(", length(age.fail), ")"),
+#   paste0(ending, " ",
+#          "(",starting-ending,
+#          ";", " ", 
+#          100-round(ending/starting*100,2), "%",")")
+#                   ), 
+#                     ncol=9,
+#                     byrow=F)
+# 
+# 
+# colnames(exclusion_table) <- c("Starting N", "Completion Fail", "Attention Check Fail", "Subjective Validity Fail", "Task Engagement Fail", "Duration Fail", "Outlier Fail", "Age Fail", "Final N")
+# rownames(exclusion_table) <- "Total"
+# # exclusion_table <- round(exclusion_table,3)
+# exclusion_table
+# 
+# 
+# #check math adds up 
+# sub<-
+#   starting - 
+#     length(incomplete.fail) - 
+#     length(attention.fail) - 
+#     length(subjective.validity.fail) - 
+#     length(task.engagement.fail) - 
+#     length(duration.fail) - 
+#     length(outlier.fail) - 
+#     length(age.fail) 
+# 
+# ending
+# 
+# isTRUE(sub==ending)
+# 
+
+```
+
+
+#Recode Variables
+
+```{r Gender / Sex}
+# gender
+Qualtrics$gender <-
+  as.character(Qualtrics$gender)
+Qualtrics$gender[Qualtrics$gender == "1"] <- "Male"
+Qualtrics$gender[Qualtrics$gender == "2"] <- "Female"
+Qualtrics$gender[Qualtrics$gender == "3"] <- "Transgender man"
+Qualtrics <- Qualtrics %>% mutate(gender = 
+                       ifelse(is.na(gender), "Transgender woman", gender)) #not sure why output did NA instead of 4 but this is correct
+Qualtrics$gender[Qualtrics$gender == "5"] <- "Non-binary"
+Qualtrics$gender[Qualtrics$gender == "6"] <- "Other"
+Qualtrics$gender[Qualtrics$gender == "7"] <- "Prefer not to say"
+
+unique(Qualtrics$gender)
+
+# sex_at_birth
+unique(Qualtrics$sex_at_birth)
+
+Qualtrics$sex_at_birth <-
+  as.character(Qualtrics$sex_at_birth)
+Qualtrics$sex_at_birth[Qualtrics$sex_at_birth == "1"] <- "Male"
+Qualtrics$sex_at_birth[Qualtrics$sex_at_birth == "2"] <- "Female"
+Qualtrics <- Qualtrics %>% mutate(sex_at_birth = 
+                       ifelse(is.na(sex_at_birth), "Intersex", sex_at_birth)) 
+Qualtrics$sex_at_birth[Qualtrics$sex_at_birth == "4"] <- "Prefer not to say"
+
+```
+
+
+```{r Race}
+# ethnoracial
+
+Qualtrics$ethnoracial <-
+  as.character(Qualtrics$ethnoracial)
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "1"] <- "Asian"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "2"] <- "White"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "3"] <- "Hispanic or Latino"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "4"] <- "Black or African American"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "5"] <- "Middle Eastern or North African"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "6"] <- "Native Hawaiian or Other Pacific Islander"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "7"] <- "First Nation or Indigenous American"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "8"] <- "Mixed"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "9"] <- "Prefer not to say"
+Qualtrics <- Qualtrics %>% mutate(ethnoracial = 
+                       ifelse(is.na(ethnoracial), "Prefer not to say", ethnoracial)) 
+unique(Qualtrics$ethnoracial)
+
+
+
+```
+
+COUNTRY
+```{r Country}
+##not sure how to easily do all this from qualtrics, so for now just manually rename the unqiue country codes
+
+# country_born
+test<-as.numeric(unique(Qualtrics$country_born))
+test[order(test)]
+
+Qualtrics$country_born[Qualtrics$country_born == "10"] <- "Austrailia"
+Qualtrics$country_born[Qualtrics$country_born == "11"] <- "Austria"
+Qualtrics$country_born[Qualtrics$country_born == "32"] <- "Canada"
+Qualtrics$country_born[Qualtrics$country_born == "80"] <- "Iran"
+Qualtrics$country_born[Qualtrics$country_born == "37"] <- "China"
+Qualtrics$country_born[Qualtrics$country_born == "86"] <- "Japan"
+Qualtrics$country_born[Qualtrics$country_born == "112"] <- "Mexico"
+Qualtrics$country_born[Qualtrics$country_born == "137"] <- "Philippines"
+Qualtrics$country_born[Qualtrics$country_born == "141"] <- "Moldova"
+Qualtrics$country_born[Qualtrics$country_born == "171"] <- "Taiwan"
+Qualtrics$country_born[Qualtrics$country_born == "187"] <- "United Kingdom"
+Qualtrics$country_born[Qualtrics$country_born == "189"] <- "United States of America"
+Qualtrics$country_born[Qualtrics$country_born == "194"] <- "Viet Nam"
+Qualtrics$country_born[Qualtrics$country_born == "151"] <- "Saudi Arabia"
+Qualtrics$country_born[Qualtrics$country_born == "75"] <- "Hong Kong"
+Qualtrics$country_born[Qualtrics$country_born == "79"] <- "Indonesia"
+Qualtrics$country_born[Qualtrics$country_born == "85"] <- "Jamaica"
+Qualtrics$country_born[Qualtrics$country_born == "78"] <- "India"
+
+unique(Qualtrics$country_born)
+
+
+
+
+# country_raised
+test<-as.numeric(unique(Qualtrics$country_raised))
+test[order(test)]
+
+Qualtrics$country_raised[Qualtrics$country_raised == "10"] <- "Austrailia"
+Qualtrics$country_raised[Qualtrics$country_raised == "37"] <- "China"
+Qualtrics$country_raised[Qualtrics$country_raised == "32"] <- "Canada"
+Qualtrics$country_raised[Qualtrics$country_raised == "75"] <- "Hong Kong"
+Qualtrics$country_raised[Qualtrics$country_raised == "86"] <- "Japan"
+Qualtrics$country_raised[Qualtrics$country_raised == "112"] <- "Mexico"
+Qualtrics$country_raised[Qualtrics$country_raised == "137"] <- "Philippines"
+Qualtrics$country_raised[Qualtrics$country_raised == "141"] <- "Moldova"
+Qualtrics$country_raised[Qualtrics$country_raised == "171"] <- "Taiwan"
+Qualtrics$country_raised[Qualtrics$country_raised == "187"] <- "United Kingdom"
+Qualtrics$country_raised[Qualtrics$country_raised == "189"] <- "United States of America"
+Qualtrics$country_raised[Qualtrics$country_raised == "194"] <- "Viet Nam"
+Qualtrics$country_raised[Qualtrics$country_raised == "151"] <- "Saudi Arabia"
+Qualtrics$country_raised[Qualtrics$country_raised == "75"] <- "Hong Kong"
+Qualtrics$country_raised[Qualtrics$country_raised == "79"] <- "Indonesia"
+Qualtrics$country_raised[Qualtrics$country_raised == "85"] <- "Jamaica"
+Qualtrics$country_raised[Qualtrics$country_raised == "78"] <- "India"
+Qualtrics$country_raised[Qualtrics$country_raised == "103"] <- "Madagascar"
+
+unique(Qualtrics$country_raised)
+
+
+# country_reside
+
+test<-as.numeric(unique(Qualtrics$country_reside))
+test[order(test)]
+
+Qualtrics$country_reside[Qualtrics$country_reside == "10"] <- "Austrailia"
+Qualtrics$country_reside[Qualtrics$country_reside == "37"] <- "China"
+Qualtrics$country_reside[Qualtrics$country_reside == "86"] <- "Japan"
+Qualtrics$country_reside[Qualtrics$country_reside == "112"] <- "Mexico"
+Qualtrics$country_reside[Qualtrics$country_reside == "137"] <- "Philippines"
+Qualtrics$country_reside[Qualtrics$country_reside == "171"] <- "Taiwan"
+Qualtrics$country_reside[Qualtrics$country_reside == "187"] <- "United Kingdom"
+Qualtrics$country_reside[Qualtrics$country_reside == "189"] <- "United States of America"
+Qualtrics$country_reside[Qualtrics$country_reside == "194"] <- "Viet Nam"
+
+unique(Qualtrics$country_reside)
+
+
+# age_move_US - confirm this is right
+Qualtrics$age_move_US <- as.numeric(Qualtrics$age_move_US)-1
+
+```
+
+```{r Sexual Orientation}
+
+Qualtrics$sexual_orientation_2 <-
+  as.character(Qualtrics$sexual_orientation_2)
+Qualtrics$sexual_orientation_2[Qualtrics$sexual_orientation_2 == "1"] <- "Heterosexual"
+Qualtrics$sexual_orientation_2[Qualtrics$sexual_orientation_2 == "2"] <- "Gay or Lesbian"
+Qualtrics$sexual_orientation_2[Qualtrics$sexual_orientation_2 == "3"] <- "Plurisexual (Bisexual, Pansexual, etc.)"
+Qualtrics$sexual_orientation_2[Qualtrics$sexual_orientation_2 == "4"] <- "Not Listed"
+Qualtrics <- Qualtrics %>% mutate(sexual_orientation_2 = 
+                       ifelse(is.na(sexual_orientation_2), "Prefer Not to Respond", sexual_orientation_2))
+
+
+unique(Qualtrics$sexual_orientation_2)
+
+```
+
+
+```{r SES}
+#10 is best off, 1 is worst off
+Qualtrics$ses_ladder <- as.numeric(Qualtrics$ses_ladder)
+
+```
+
+
+
+#DEFINING SCORES ON MEASURES
+
+
+```{r Rename Summed Qualtrics Values}
+
+#ffmq - create total score manually with and without observing 
+#personality - subtract 1 from everything (qualtrics had a +1 on all items; 12 items per subgroup so it's -12 total)
+# SC1 - awareness
+# SC2 - observing
+# SC3 - non reactivity
+# SC4  - nonjudgement 
+# SC5 - describe 
+# SC6 - openness 
+# SC7 - conscientiousness 
+# SC8 - extraversion 
+# SC9 - agreeableness
+# SC10 - neuroticism 
+
+#
+Qualtrics$neuroticism <- as.numeric(Qualtrics$SC10)
+Qualtrics$neuroticism <- Qualtrics$neuroticism -12
+
+Qualtrics$extraversion <- as.numeric(Qualtrics$SC8)
+Qualtrics$extraversion <- Qualtrics$extraversion -12
+
+Qualtrics$openness <- as.numeric(Qualtrics$SC6)
+Qualtrics$openness <- Qualtrics$openness -12
+
+Qualtrics$agreeableness <- as.numeric(Qualtrics$SC9)
+Qualtrics$agreeableness <- Qualtrics$agreeableness -12
+
+Qualtrics$conscientiousness <- as.numeric(Qualtrics$SC7)
+Qualtrics$conscientiousness <- Qualtrics$conscientiousness -12
+
+
+#
+Qualtrics$observing <- as.numeric(Qualtrics$SC2)
+Qualtrics$describe <- as.numeric(Qualtrics$SC5)
+Qualtrics$awareness <- as.numeric(Qualtrics$SC1)
+Qualtrics$nonjudging <- as.numeric(Qualtrics$SC4)
+Qualtrics$nonreactivity <- as.numeric(Qualtrics$SC3)
+
+#ffmq totals 
+Qualtrics <-
+  Qualtrics %>%
+  mutate(ffmq_all = (describe+awareness+nonjudging+nonreactivity+observing)/5) %>%
+    mutate(ffmq_no_observe = (describe+awareness+nonjudging+nonreactivity)/4)
+
+```
+
+
+
+#Combine ESM with pre/post
+```{r Combine everything}
+
+ESM <-
+  merge(x = phone,
+        y = Qualtrics,
+        by = "PID",
+        no.dups = F)
+
+
+length(unique(ESM$PID))
+
+```
+
+```{r Clean everything}
+#check if any NA rows... there shouldn't be 
+ESM <- ESM %>% 
+  drop_na(wb)
+#this leaves you with only rows where a participant answered a prompt
+
+
+str(ESM$PID) 
+
+# Number of prompts answered (out of 42 total that were sent to participants)
+prompts<- ESM %>%
+  group_by(PID) %>%
+ dplyr::summarise(n = length(PID)) %>%
+   arrange(desc(n))
+prompts
+
+psych::describe(prompts$n)
+hist(prompts$n)
+
+###there seems to be duplicate entries for some people. 
+ESM <- ESM %>%
+  distinct(duration, PID,
+           .keep_all=T)
+
+
+prompts<- ESM %>%
+  group_by(PID) %>%
+ dplyr::summarise(n = length(PID)) %>%
+   arrange(desc(n))
+prompts
+
+psych::describe(prompts$n)
+hist(prompts$n)
+
+
+```
+
+```{r Final Counts}
+
+#sample size
+length(unique(ESM$PID))
+
+#prompts
+length(ESM$PID)
+
+
+
+```
+
+
+
+#Publish CSV for Analysis
+```{r Publish CSV}
+
+
+write.csv(ESM, "/Users/arthurraynes/Downloads/ESM.Clean.Nov2022.csv")
+
+
+```
+
+
+
+
+
+
+

@@ -1,0 +1,5391 @@
+---
+title: "ESM analysis"
+author: "Stephen Raynes"
+date: "6/30/2022"
+output: html_document
+---
+
+
+#Setup
+```{r Libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(tidyverse)
+library(dplyr)
+library(car)
+library("ggpubr")
+library("corrplot")
+# install.packages("lme4")
+library(lme4)
+# install.packages("backports")
+library(backports)     # to revive the isFALSE() function for sim_slopes()
+# install.packages("effects")
+library(effects)       # for probing interactions
+library(ggplot2)       # for data visualization
+# install.packages("interactions")
+library(interactions)  # for probing/plotting interactions
+# install.packages("lmerTest")
+library(lmerTest)      # for p-values
+# install.packages("psych")
+library(psych)         # for describing the data
+# detach(package:plyr)
+# install.packages("chisq.posthoc.test")
+library(chisq.posthoc.test)
+# install.packages("MuMIn")
+library(MuMIn)
+
+
+packageVersion("lme4")
+```
+
+```{r CSVs}
+#load in most recent csv's 
+ESM <- read_csv("/Users/Stephen.Raynes/Downloads/ESM.Clean.Nov2022.csv")
+
+#remove extra column this creates which gets annoying later on
+ESM <- subset(ESM, select = -c(...1))
+
+#distinguish just the pre/post measures for things like demo tables
+Qualtrics <- ESM[!duplicated(ESM$PID), ]
+
+```
+
+
+```{r Counts}
+#should be equal 
+length(unique(ESM$PID))
+length(unique(Qualtrics$PID))
+
+
+#avg prompts per person
+nrow(ESM) / length(unique(ESM$PID))
+
+
+#SD/ range
+ sd<- ESM %>%
+ group_by(PID) %>%
+  dplyr::summarise(prompts = length(PID),
+                   avg = nrow(ESM)/prompts) %>%
+    arrange(desc(prompts))
+ sd
+
+SD(sd$prompts)
+range(sd$prompts)
+mean(sd$prompts)
+
+round((mean(sd$prompts) / 42 * 100),2)
+
+round(4454/10009*100,2)
+
+
+```
+
+
+
+#Demographics
+```{r Clean Up}
+##clean up demo data first
+###consider combining low counts with a "other" group
+
+# Asian Nationals
+# Born in Asia and moved to the USA after the age of 13
+# Asian-American
+# Born in Asia and moved to the USA before the age of 13
+# Asian-American
+# Both born and grew up in America but identified as ethnoracially Asia
+
+unique(Qualtrics$ethnoracial)
+#create asian national vs asian american category
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "Asian" &
+                          Qualtrics$age_move_US < 13] <- "Asian American"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "Asian" &
+                          Qualtrics$country_born == "United States of America" &
+                   Qualtrics$country_raised == "United States of America"] <- "Asian American"
+
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "Asian" &
+                          Qualtrics$age_move_US > 13] <- "Asian National"
+Qualtrics$ethnoracial[Qualtrics$ethnoracial == "Asian" &
+                          Qualtrics$country_born != "United States of America" |
+                   Qualtrics$country_raised != "United States of America"] <- "Asian National"
+
+group_by(Qualtrics, ethnoracial) %>%
+ dplyr::summarise(n = length(ethnoracial)) %>%
+   arrange(desc(n))
+
+
+
+#create other to combine low cells - only do as needed!!!!!
+# Qualtrics$ethnoracial[Qualtrics$ethnoracial == "Middle Eastern or North African" |
+#                   Qualtrics$ethnoracial == "Prefer not to say" |
+#                    Qualtrics$ethnoracial == "Black or African American"] <- "Other"
+
+group_by(Qualtrics, ethnoracial) %>%
+ dplyr::summarise(n = length(ethnoracial),
+  `%` = (n/nrow(Qualtrics)*100)) %>%
+   arrange(desc(n))
+
+```
+
+
+```{r Demo Table}
+#create table 
+table1::label(Qualtrics$age) <- "Age"
+table1::label(Qualtrics$ses_ladder) <- "SES Ladder (1:10)"
+table1::label(Qualtrics$gender) <- "Gender Identity"
+table1::label(Qualtrics$sex_at_birth) <- "Sex at Birth"
+table1::label(Qualtrics$sexual_orientation_2) <- "Sexual Orientation"
+table1::label(Qualtrics$ethnoracial) <- "Ethno-Racial Category"
+
+table1::table1(
+  ~age + ses_ladder + gender + sex_at_birth + sexual_orientation_2 + ethnoracial 
+               , data = Qualtrics, digits=3)
+
+
+# my.render <- function(x, name, ...) {
+#   if (name == "age") {
+#    table1::render.default(x=x, name=name, ..., digits=3)
+#   # } else if (name == "qrs_pre") {
+#   #   table1::render.default(x=x, name=name, ..., digits=4)
+#   } else {
+#     table1::render.default(x=x, name=name, ..., digits=3)
+#   }
+# }
+# 
+# table1::table1(
+#   ~age + ses_ladder + gender + sex_at_birth + sexual_orientation_2 + ethnoracial 
+#                , data = Qualtrics, render=my.render)
+# 
+# 
+# 
+# 
+# 
+# my.render.cont2 <- function(x) {
+#   with(table1::stats.default(x), sprintf("%s &plusmn; %s (%s, %s)",
+#                                          table1::round_pad(MEAN,2),
+#                                          table1::round_pad(SD,2),
+#                                          MIN,MAX)) }
+# # ?round_pad
+# # my.render.cat <- function(x) {
+# #     with(table1::stats.default(x),  sprintf("%d (%0.0f %%)", table1::round_pad(frequency,2)))
+# # }
+#             
+# 
+# 
+# table1::table1(
+#   ~age + ses_ladder + gender + sex_at_birth + sexual_orientation_2 + ethnoracial 
+#                , data = Qualtrics
+#                  ,render.continuous=my.render.cont2,
+#                    render.categorical=my.render.cat)
+
+
+
+round(mean(Qualtrics$age, na.rm=T),2)
+round(mean(Qualtrics$age, na.rm=T),2)
+1/337*100
+
+```
+
+
+```{r Trait Table}
+#Other individual traits
+
+
+#create table 
+table1::label(Qualtrics$neuroticism) <- "Neuroticism"
+table1::label(Qualtrics$extraversion) <- "Extraversion"
+table1::label(Qualtrics$openness) <- "Openness"
+table1::label(Qualtrics$agreeableness) <- "Agreeableness"
+table1::label(Qualtrics$conscientiousness) <- "Conscientiousness"
+table1::label(Qualtrics$observing) <- "FFMQ_Observing" 
+table1::label(Qualtrics$describe) <- "FFMQ_Describing"
+table1::label(Qualtrics$awareness) <- "FFMQ_Awareness"
+table1::label(Qualtrics$nonjudging) <- "FFMQ_Nonjudging"
+table1::label(Qualtrics$nonreactivity) <- "FFMQ_Nonreactivity"
+table1::label(Qualtrics$ffmq_all) <- "FFMQ Total"
+table1::label(Qualtrics$ffmq_no_observe) <- "FFMQ Total without Observing"
+
+table1::table1(~neuroticism + extraversion + openness + agreeableness + conscientiousness +
+                 observing + describe + awareness + nonjudging + nonreactivity + ffmq_all +ffmq_no_observe
+               , data = Qualtrics) 
+
+```
+
+
+No groups to compare demo/traits against, so just need descriptive data on that. 
+
+
+#Cleanup/Visualize Individual Variables
+
+
+```{r Create Inner Speech Variables}
+
+ESM <- ESM %>%
+  mutate(clarity_all = coalesce(clarity,no_inner_speech_clarity)) %>%
+  mutate(valence_all = coalesce(valence,no_inner_speech_valence)) %>%
+  mutate(reaction_all = coalesce(reaction,no_inner_speech_reaction)) %>%
+  mutate(interesting_all = coalesce(interesting,no_inner_speech_interesting))
+
+# attention
+# wb
+# inner_speech 
+# clarity
+# valence
+# reaction
+# interesting
+# inner_experience
+# no_inner_speech_clarity
+# no_inner_speech_valence
+# no_inner_speech_reaction
+# no_inner_speech_interesting
+# activity
+
+```
+
+
+```{r Wellbeing}
+# WELL-BEING: How were you feeling?
+# [ 1 = '-3: Very bad' 2 = '-2' 3 = '-1' 4 = '0: Neutral' 5 = '1' 6 = '2' 7 = '3: Very good'  ]
+
+ESM$wb[ESM$wb==1] <- -3
+ESM$wb[ESM$wb==2] <- -2
+ESM$wb[ESM$wb==3] <- -1
+ESM$wb[ESM$wb==4] <- 0
+ESM$wb[ESM$wb==5] <- 1
+ESM$wb[ESM$wb==6] <- 2
+ESM$wb[ESM$wb==7] <- 3
+
+
+hist(ESM$wb) 
+
+group_by(ESM, wb) %>%
+ dplyr::summarise(n = length(wb),
+                  `%` = (n/nrow(ESM)*100))
+
+describe(ESM$wb)
+hist(ESM$wb)
+
+```
+
+
+```{r Inner Speech}
+
+# Which best describes what you were experiencing?
+# [ 1 = 'INNER SPEECH: “I was experiencing inner speech (talking to myself INTERNALLY)”' 2 = 'NO INNER SPEECH: “I was NOT experiencing inner speech (NOT talking to myself INTERNALLY)”'  ]
+
+ESM$inner_speech[ESM$inner_speech==0] = "Inner Speech"
+ESM$inner_speech[ESM$inner_speech==1] = "No Inner Speech"
+
+group_by(ESM, inner_speech) %>%
+ dplyr::summarise(n = length(inner_speech), 
+                `%` = (n/nrow(ESM)*100))
+
+
+inner_pie <- 
+  data.frame(`Inner Speech` = ESM$inner_speech, 
+             participant = ESM$PID)
+
+# df <- inner_pie %>% 
+#   group_by(Inner.Speech) %>% # Variable to be transformed
+#   count() %>% 
+#   ungroup() %>% 
+#   mutate(perc = `n` / sum(`n`)) %>% 
+#   arrange(perc) %>%
+#   mutate(labels = scales::percent(perc))
+# 
+# ggplot(df, aes(x = "", y = perc, fill = Inner.Speech)) +
+#   geom_col() +
+#   geom_text(aes(label = labels),
+#             position = position_stack(vjust = 0.5)) +
+#   coord_polar(theta = "y") +
+#   guides(fill = guide_legend(title = "Inner Speech")) +
+#   theme_void()
+
+
+##old pie chart 
+
+# 
+# piedata<- c(length(ESM$inner_speech[ESM$inner_speech=="Inner Speech"]),
+#             length(ESM$inner_speech[ESM$inner_speech=="No Inner Speech"]))
+# 
+# 
+# pielabels<- c('Inner Speech', 
+#               'No Inner Speech')
+# 
+# pie(piedata, pielabels,
+#     border='black',
+#     main = 'Inner Speech')
+# 
+
+
+```
+
+```{r Prompt histograms}
+##need to define esm-no-inner and esm-inner first, which is below somewhere
+
+
+# histogram of no inner speech frequencies
+# prompts<- ESM_no_inner %>%
+#   group_by(PID) %>%
+#  dplyr::summarise(n = length(PID)) %>%
+#    arrange(desc(n))
+# prompts
+
+# hist(prompts$n, 
+     # main = "Frequencies of No Inner Speech Prompts by Participant", 
+     # breaks = 38,
+     # xlab = "Number of No Inner Speech Prompts")
+
+#histogram of inner speech frequencies
+# prompts<- ESM_inner %>%
+#   group_by(PID) %>%
+#  dplyr::summarise(n = length(PID)) %>%
+#    arrange(desc(n))
+# prompts
+# 
+# hist(prompts$n, 
+#      main = "Frequencies of Inner Speech Prompts by Participant", 
+#      breaks = 38,
+#      xlab = "Number of Inner Speech Prompts")
+
+
+#histogram of inner speech as a percent per person 
+# prompts<-group_by(ESM, PID) %>%
+#  dplyr::summarise(inner_speech = length(inner_speech[inner_speech=="Inner Speech"]),
+#                   no_inner_speech = length(inner_speech[inner_speech!="Inner Speech"]),
+#                 percent_inner = (inner_speech/(inner_speech+no_inner_speech))*100) %>%
+#    arrange(desc(percent_inner))
+# 
+# prompts
+# 
+# hist(prompts$percent_inner,
+#      main = "Frequencies of % of Prompts that were Inner Speech by Participant",
+#      # breaks = 100,
+#      xlab = "% of Prompts that were Inner Speech")
+
+```
+
+
+inner experience - make separate data frame for that 
+```{r Inner Experience}
+# “Which of these were you primarily experiencing? (Select one)”
+# [ 1 = 'BODY: “I was experiencing body sensations, e.g. hunger” ' 2 = 'EMOTION : “I was experiencing emotions, e.g. sadness"' 3 = 'ENVIRONMENT : “I was noticing the environment, e.g. looking at the trees”' 4 = 'MUSIC/SOUNDS : “I was listening to music/podcast, e.g. with my earphones in, or imagining music/sounds”' 5 = 'VISUAL IMAGERY: “I was experiencing visual imagery, e.g. imagining my dog”' 6 = 'ANOTHER PERSON: “I was experiencing another person, e.g. holding hands”' 7 = 'BLANK MIND:  “I was not thinking about anything at all-- my mind was completely blank”' 8 = 'Other' ]
+
+ESM$inner_experience[ESM$inner_experience==1] = "Body"
+ESM$inner_experience[ESM$inner_experience==2] = "Emotion"
+ESM$inner_experience[ESM$inner_experience==3] = "Environment"
+ESM$inner_experience[ESM$inner_experience==4] = "Music/Sounds"
+ESM$inner_experience[ESM$inner_experience==5] = "Visual Imagery"
+ESM$inner_experience[ESM$inner_experience==6] = "Another Person"
+ESM$inner_experience[ESM$inner_experience==7] = "Blank Mind"
+ESM$inner_experience[ESM$inner_experience==8] = "Other"
+
+
+ESM_noinnerspeech <- ESM %>%
+  filter(inner_speech=="No Inner Speech")
+
+group_by(ESM_noinnerspeech, inner_experience) %>%
+ dplyr::summarise(n = length(inner_experience), 
+                `%` = (n/nrow(ESM_noinnerspeech)*100)) %>%
+  arrange(desc(n))
+
+inner_ex_pie <- 
+  data.frame(`Inner Experience` = ESM_noinnerspeech$inner_experience, 
+             participant = ESM_noinnerspeech$PID)
+
+# df <- inner_ex_pie %>% 
+#   group_by(Inner.Experience) %>% # Variable to be transformed
+#   count() %>% 
+#   ungroup() %>% 
+#   mutate(perc = `n` / sum(`n`)) %>% 
+#   arrange(perc) %>%
+#   mutate(labels = scales::percent(perc))
+
+# ggplot(df, aes(x = "", y = perc, fill = Inner.Experience)) +
+#   geom_col() +
+#   geom_text(aes(label = labels),
+#             position = position_stack(vjust = .5)) +
+#   coord_polar(theta = "y") +
+#   guides(fill = guide_legend(title = "Inner Experience")) +
+#   theme_void()
+
+
+
+#old pie chart
+# piedata<- c(length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="BODY: I was experiencing body sensations, e.g. hunger"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="EMOTION: I was experiencing emotions, e.g. sadness"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="ENVIRONMENT: I was noticing the environment, e.g. looking at the trees"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="MUSIC/SOUNDS : I was listening to music/podcast, e.g. with my earphones in, or imagining music/sounds"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="VISUAL IMAGERY: I was experiencing visual imagery, e.g. imagining my dog"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="ANOTHER PERSON: I was experiencing another person, e.g. holding hands"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="BLANK MIND:  I was not thinking about anything at all-- my mind was completely blank"]),
+#             length(ESM_noinnerspeech$inner_experience[ESM_noinnerspeech$inner_experience=="Other"])
+#             )
+# 
+# pielabels<- c('Body',
+#               'Emotion',
+#               'Environment',
+#               'Music/Sounds',
+#               'Visual Imagery',
+#               'Another Person',
+#               'Blank Mind',
+#               'Other')
+# 
+# pie(piedata, pielabels,
+#     border='black',
+#     main = 'Inner Experience', 
+#     clockwise=T)
+# 
+
+
+
+```
+
+activity
+```{r Activity}
+# CURRENT ACTIVITY: “Whether in-person or online, what type of activity were you primarily doing? (select one)”
+# [ 1 = 'Social activity (e.g., being with family, friends, or peers; phone calls or messages; attending a party or group outing)' 2 = 'Physical activity (e.g., exercising, sports, walking, bicycling, hiking) ' 3 = 'Restful activity (e.g., eating, resting, taking a nap, doing nothing, reading for fun, watching TV or videos, browsing the internet or social media) ' 4 = 'Household activity (e.g., preparing meals, grocery shopping, household finances, cleaning or other chores)' 5 = 'Cognitive activity (e.g., studying, homework, attending lecture, learning something new, puzzle solving)' 6 = 'Other' ]
+
+ESM$activity[ESM$activity==1] = "Social"
+ESM$activity[ESM$activity==2] = "Physical"
+ESM$activity[ESM$activity==3] = "Restful"
+ESM$activity[ESM$activity==4] = "Household"
+ESM$activity[ESM$activity==5] = "Cognitive"
+ESM$activity[ESM$activity==6] = "Other"
+
+group_by(ESM, activity) %>%
+ dplyr::summarise(n = length(activity), 
+                `%` = (n/nrow(ESM)*100)) %>%
+  arrange(desc(n))
+
+
+
+
+inner_ac_pie <- 
+  data.frame(activity = ESM$activity, 
+             participant = ESM$PID)
+
+# df <- inner_ac_pie %>% 
+#   group_by(activity) %>% # Variable to be transformed
+#   count() %>% 
+#   ungroup() %>% 
+#   mutate(perc = `n` / sum(`n`)) %>% 
+#   arrange(perc) %>%
+#   mutate(labels = scales::percent(perc))
+
+# ggplot(df, aes(x = "", y = perc, fill = activity)) +
+#   geom_col() +
+#   geom_text(aes(label = labels),
+#             position = position_stack(vjust = 0.5)) +
+#   coord_polar(theta = "y") +
+#   guides(fill = guide_legend(title = "Activity")) +
+#   theme_void()
+
+
+
+##old pie chart
+# piedata<- c(length(ESM$activity[ESM$activity=="Social activity (e.g., being with family, friends, or peers; phone calls or messages; attending a party or group outing)"]),
+#             length(ESM$activity[ESM$activity=="Physical activity (e.g., exercising, sports, walking, bicycling, hiking)"]),
+#             length(ESM$activity[ESM$activity=="Restful activity (e.g., eating, resting, taking a nap, doing nothing, reading for fun, watching TV or videos, browsing the internet or social media))"]),
+#             length(ESM$activity[ESM$activity=="Household activity (e.g., preparing meals, grocery shopping, household finances, cleaning or other chores)"]),
+#             length(ESM$activity[ESM$activity=="Cognitive activity (e.g., studying, homework, attending lecture, learning something new, puzzle solving)"]),
+#             length(ESM$activity[ESM$activity=="Other"]))
+# 
+# 
+# pielabels<- c('Social', 
+#               'Physical',
+#               'Restful',
+#               'Household',
+#               'Cognitive',
+#               'Other')
+# 
+# pie(piedata, pielabels,
+#     border='black',
+#     main = 'Activity', 
+#     clockwise=T)
+
+```
+
+
+attention state
+```{r Attention State}
+
+ESM$attention[ESM$attention==1] = "Present"
+ESM$attention[ESM$attention==2] = "Not Present"
+
+
+group_by(ESM, attention) %>%
+ dplyr::summarise(n = length(attention), 
+                `%` = (n/nrow(ESM)*100)) %>%
+  arrange(desc(n))
+
+
+
+```
+
+
+
+```{r Clarity}
+
+# CLARITY: “What was the clarity of your inner speech/experience?”
+# [ 1 = '1: Not at all clear' 2 = '2' 3 = '3' 4 = '4: Moderately clear' 5 = '5' 6 = '6' 7 = '7: Extremely clear'  ]
+
+ESM$clarity_all 
+
+hist(ESM$clarity_all) 
+
+group_by(ESM, clarity_all) %>%
+ dplyr::summarise(n = length(clarity_all),
+                  `%` = (n/nrow(ESM)*100))
+
+
+#total
+describe(ESM$clarity_all)
+hist(ESM$clarity_all) 
+#prompts with inner speech
+describe(ESM$clarity)
+hist(ESM$clarity) 
+#prompts without inner speech
+describe(ESM$no_inner_speech_clarity)
+hist(ESM$no_inner_speech_clarity) 
+
+
+```
+
+
+```{r Valence}
+
+# VALENCE: “What was the valence of your inner speech/experience? If a stranger saw the content of your inner speech (i.e., just the actual words), how would they rate it?”
+
+# [ 1 = '-3: Very negative' 2 = '-2' 3 = '-1' 4 = '0: Neutral' 5 = '1' 6 = '2' 7 = '3: Very positive'  ]
+
+ESM$valence[ESM$valence==1] <- -3
+ESM$valence[ESM$valence==2] <- -2
+ESM$valence[ESM$valence==3] <- -1
+ESM$valence[ESM$valence==4] <- 0
+ESM$valence[ESM$valence==5] <- 1
+ESM$valence[ESM$valence==6] <- 2
+ESM$valence[ESM$valence==7] <- 3
+
+ESM$valence_all[ESM$valence_all==1] <- -3
+ESM$valence_all[ESM$valence_all==2] <- -2
+ESM$valence_all[ESM$valence_all==3] <- -1
+ESM$valence_all[ESM$valence_all==4] <- 0
+ESM$valence_all[ESM$valence_all==5] <- 1
+ESM$valence_all[ESM$valence_all==6] <- 2
+ESM$valence_all[ESM$valence_all==7] <- 3
+
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==1] <- -3
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==2] <- -2
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==3] <- -1
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==4] <- 0
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==5] <- 1
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==6] <- 2
+ESM$no_inner_speech_valence[ESM$no_inner_speech_valence==7] <- 3
+
+ESM$valence_all 
+
+group_by(ESM, valence_all) %>%
+ dplyr::summarise(n = length(valence_all),
+                  `%` = (n/nrow(ESM)*100))
+
+
+#total
+describe(ESM$valence_all)
+hist(ESM$valence_all) 
+#prompts with inner speech
+describe(ESM$valence)
+hist(ESM$valence) 
+#prompts without inner speech
+describe(ESM$no_inner_speech_valence)
+hist(ESM$no_inner_speech_valence) 
+
+
+
+#total prompts with mind wandering vs not 
+describe(ESM$valence_all[ESM$attention=="Present"])
+describe(ESM$valence_all[ESM$attention=="Not Present"])
+
+#inner speech prompts with mind wandering vs not 
+describe(ESM$valence[ESM$attention=="Present"])
+describe(ESM$valence[ESM$attention=="Not Present"])
+
+#no inner speech prompts with mind wandering vs not 
+describe(ESM$no_inner_speech_valence[ESM$attention=="Present"])
+describe(ESM$no_inner_speech_valence[ESM$attention=="Not Present"])
+
+
+```
+
+
+```{r Reaction}
+
+# REACTION: “How much did you feel reactive to your inner speech/experience?”
+# [ 1 = '1: No reaction at all' 2 = '2' 3 = '3' 4 = '4: Moderate reaction' 5 = '5' 6 = '6' 7 = '7: Extreme reaction'  ]
+
+ESM$reaction_all 
+
+group_by(ESM, reaction_all) %>%
+ dplyr::summarise(n = length(reaction_all),
+                  `%` = (n/nrow(ESM)*100))
+
+
+#total
+describe(ESM$reaction_all)
+hist(ESM$reaction_all) 
+#prompts with inner speech
+describe(ESM$reaction)
+hist(ESM$reaction) 
+#prompts without inner speech
+describe(ESM$no_inner_speech_reaction)
+hist(ESM$no_inner_speech_reaction) 
+
+```
+
+
+```{r Interesting}
+# INTERESTING: “How interesting was the inner speech/experience?”
+# [ 1 = '1: Not at all interesting' 2 = '2' 3 = '3' 4 = '4: Moderately interesting' 5 = '5' 6 = '6' 7 = '7: Extremely interesting'  ]
+
+ESM$interesting_all 
+
+group_by(ESM, interesting_all) %>%
+ dplyr::summarise(n = length(interesting_all),
+                  `%` = (n/nrow(ESM)*100))
+
+
+#total
+describe(ESM$interesting_all)
+hist(ESM$interesting_all) 
+#prompts with inner speech
+describe(ESM$interesting)
+hist(ESM$interesting) 
+#prompts without inner speech
+describe(ESM$no_inner_speech_interesting)
+hist(ESM$no_inner_speech_interesting) 
+
+```
+
+
+
+
+NOTE I am using inner speech prompts only now; and then I'll repeat stuff at end with no inner speech. I repeat this later on but I need to create it here for the descriptive stuff
+```{r Make inner speech dataset}
+#inner
+ESM_inner <- ESM %>%
+  filter(inner_speech=="Inner Speech")
+
+```
+
+#Visual Depictions
+
+Note - wb goes from -3:3
+```{r WB by Activity}
+
+table1::label(ESM_inner$activity) <- "Activity"
+table1::label(ESM_inner$wb) <- "Wellbeing"
+table1::table1(~wb | activity , data = ESM_inner, digits=2)
+
+
+
+# ESM_inner %>%
+#   group_by(activity) %>%
+#  summarise(Frequency = length(activity), Wellbeing = mean(wb)) %>%
+#   arrange(desc(Frequency)) %>%
+#   ggplot(aes(x = Wellbeing, y = Frequency), 
+#          legend=FALSE) +
+#   geom_point(aes(color = activity, size = Frequency), alpha = 0.5) +
+#   scale_size(range = c(5, 25)) +
+#     geom_label(aes(label=activity, size=8)) +
+#   theme_minimal()+
+#   geom_vline(xintercept=mean(ESM_inner$wb), linetype="solid", color = "red", size=.3)+
+#   geom_text(aes(x=mean(ESM_inner$wb), label="\nMean Wellbeing", y=800), colour="red", angle=90, size=4) +
+#   theme(legend.position = 'none')+
+#   theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+#   # theme(axis.title.x = element_blank())+
+#   theme(axis.title.y = element_text(size=14))+
+#   theme(axis.text.x = element_text(size=14, angle = 45, hjust = 1))+
+#   theme(axis.text.y = element_text(size=14))+
+#   theme(legend.text = element_text(size=14))+
+#   theme(legend.title = element_text(size=14))+
+#   theme(panel.border = element_rect("black",  fill=NA))+
+#   theme(plot.title = element_text(face = "bold"))+
+#   theme(plot.title = element_text(hjust = 0))+
+#   xlim(-1,2)
+#   # ylim(0,60)
+# 
+
+
+
+sd(ESM_inner$wb)
+sd(ESM_inner$wb[ESM_inner$activity=="Social"])
+sd(ESM_inner$wb[ESM_inner$activity=="Physical"])
+sd(ESM_inner$wb[ESM_inner$activity=="Household"])
+sd(ESM_inner$wb[ESM_inner$activity=="Restful"])
+sd(ESM_inner$wb[ESM_inner$activity=="Cognitive"])
+sd(ESM_inner$wb[ESM_inner$activity=="Other"])
+
+
+```
+
+
+Note - wb goes from -3:3
+```{r WB by Attention State}
+table1::label(ESM_inner$attention) <- "Attention"
+table1::label(ESM_inner$wb) <- "Wellbeing"
+
+table1::table1(~wb | attention , data = ESM_inner, digits=2)
+
+
+# ESM_inner %>%
+#   group_by(attention) %>%
+#  summarise(Frequency = length(attention), Wellbeing = mean(wb)) %>%
+#   arrange(desc(Frequency)) %>%
+#   ggplot(aes(x = Wellbeing, y = Frequency), 
+#          legend=FALSE) +
+#   geom_point(aes(color = attention, size = Frequency), alpha = 0.5) +
+#   scale_size(range = c(5, 25)) +
+#     geom_label(aes(label=attention, size=8)) +
+#   theme_minimal()+
+#   geom_vline(xintercept=mean(ESM_inner$wb), linetype="solid", color = "red", size=.3)+
+#     geom_text(aes(x=mean(ESM_inner$wb), label="\nMean Wellbeing", y=2500), colour="red", angle=90, size=4) +
+#   theme(legend.position = 'none')+
+#   theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+#   # theme(axis.title.x = element_blank())+
+#   theme(axis.title.y = element_text(size=14))+
+#   theme(axis.text.x = element_text(size=14, angle = 45, hjust = 1))+
+#   theme(axis.text.y = element_text(size=14))+
+#   theme(legend.text = element_text(size=14))+
+#   theme(legend.title = element_text(size=14))+
+#   theme(panel.border = element_rect("black",  fill=NA))+
+#   theme(plot.title = element_text(face = "bold"))+
+#   theme(plot.title = element_text(hjust = 0))+
+#   xlim(-1,2)
+#   # ylim(0,60)
+
+
+sd(ESM_inner$wb[ESM_inner$attention=="0"])
+3602/4454
+
+```
+
+
+```{r visual depiction graphs for paper}
+#combine above 2
+
+
+library(ggrepel)
+?ggrepel
+
+# p1<-ESM_inner %>%
+#   group_by(activity) %>%
+#  summarise(
+#    Frequency = length(activity),
+#    Wellbeing = mean(wb)) %>%
+#    arrange(desc(Wellbeing)) %>%
+#   ggplot(aes(x = Wellbeing,
+#              y = (seq_along(Wellbeing)),),
+#          legend=FALSE) +
+#       coord_cartesian(ylim=c(.5, 6.25))+
+#   # scale_y_continuous(expand=c(.3,.3)) +
+#   geom_point(aes(size = Frequency), alpha = 0.5) +
+#   scale_size(range = c(5, 25)) +
+#     geom_text(aes(label=activity, size=8, hjust=-.6),
+#             check_overlap = TRUE,
+#             position = position_dodge(width = 1), inherit.aes=T
+#             )+
+#   # geom_text(aes(label=activity, size=8, hjust=-.6),
+#   #           # check_overlap = TRUE,
+#   #           position = position_dodge(width = 1), inherit.aes=T)+
+#   theme_minimal()+
+#   geom_vline(xintercept=mean(ESM_inner$wb), linetype="dashed", size=.5)+
+#   # geom_text(aes(x=mean(ESM_inner$wb),
+#   #               label="\nMean Wellbeing"), angle=90, size=4) +
+#   theme(legend.position = 'none')+
+#   # theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+#   theme(axis.title.x = element_blank())+
+#   theme(axis.title.y = element_blank())+
+#   theme(axis.text.x = element_blank())+
+#   theme(axis.text.y = element_blank())+
+#   theme(legend.text = element_text(size=14))+
+#   theme(legend.title = element_text(size=14))+
+#   theme(panel.border = element_rect("black",  fill=NA))+
+#   theme(plot.title = element_text(face = "bold"))+
+#   theme(plot.title = element_text(hjust = 0))+
+#   xlim(-1,2)+
+#   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+# p1<-p1+theme(plot.margin=unit(c(1,1,0,1),"cm"))
+# 
+# 
+# 
+# p2<-ESM_inner %>%
+#   group_by(attention) %>%
+#  summarise(
+#    Frequency = length(attention),
+#    Mood = mean(wb)) %>%
+#    arrange(desc(Mood)) %>%
+#   ggplot(aes(x = Mood,
+#              y = (seq_along(Mood)),),
+#          legend=FALSE) +
+#       coord_cartesian(ylim=c(.5, 3))+
+#   # scale_y_continuous(expand=c(.3,.3)) +
+#   geom_point(aes(size = Frequency), alpha = 0.5) +
+#   scale_size(range = c(5, 25)) +
+#  geom_text(aes(label=c("Present", "Mind Wandering"), size=8, hjust=-.6),
+#             check_overlap = TRUE)+
+#   theme_minimal()+
+#     geom_vline(xintercept=mean(ESM_inner$wb), linetype="dashed", size=.5)+
+#   # geom_text(aes(x=mean(ESM_inner$wb),
+#   #               label="\nMean Wellbeing"), angle=90, size=4) +
+#   theme(legend.position = 'none')+
+#   theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+#   # theme(axis.title.x = element_blank())+
+#   theme(axis.title.y = element_blank())+
+#   theme(axis.text.x = element_text(size=14, angle = 45, hjust = 1))+
+#   theme(axis.text.y = element_blank())+
+#   theme(legend.text = element_text(size=14))+
+#   theme(legend.title = element_text(size=14))+
+#   theme(panel.border = element_rect("black",  fill=NA))+
+#   theme(plot.title = element_text(face = "bold"))+
+#   theme(plot.title = element_text(hjust = 0))+
+#   xlim(-1,2)+
+#   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+# p2<-p2+theme(plot.margin=unit(c(-0.1,1,1,1),"cm"))
+# 
+# 
+# library(grid)
+# require(gridExtra)
+# grid.arrange(p1, p2, ncol = 1, heights = c(2, 1))
+
+
+
+round(188/4454*100,2)
+
+```
+
+
+Convert to long format 
+It seems the Exiwell default is long format, so I can skip this step actually!
+
+
+
+```{r Activity as Covariate}
+
+#activity by attention state
+table <- table(ESM_inner$activity, ESM_inner$attention)
+table
+chisq.test(table, 
+           simulate.p.value = F)
+
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=F)
+
+
+table1::label(ESM_inner$activity) <- "Activity"
+table1::label(ESM_inner$attention) <- "Attention State"
+
+table1::table1(~activity | attention
+               , data = ESM_inner, digits=2) 
+
+
+
+#activity alone in mlm - done in MLM section
+
+
+```
+
+
+##Zero order analysis
+```{r Continuous vs Continuous}
+# https://stats.stackexchange.com/questions/348901/correlation-between-two-variables-within-a-third-group
+
+##continuous vs. continuous variables 
+
+#dummy code attention first so it can go in here
+ESM_inner$attention <- ifelse(ESM_inner$attention == 'Present', 1, 0)
+
+##try rmcorr for repeated measures correlation
+# install.packages("rmcorr")
+# library(rmcorr)
+# 
+# 
+# tab1<-rmcorr_mat(PID,
+#            c("wb", "attention", "valence", "reaction", "clarity", "interesting"),
+#             ESM_inner,
+#            .95)
+# 
+# #matrix
+# tab<-tab1$matrix
+# tab<-round(tab,2)
+# 
+# #p values and CIs
+# tab1$summary
+# round(tab1$summary[,7],3)
+# 
+# data.frame(c(tab1$summary[,1]),
+#        tab1$summary[,2],
+#   round(tab1$summary[,7],3))
+
+
+
+```
+
+
+```{r Continuous vs. Categorical}
+
+# - t test  / ANOVA
+
+## categorical:
+# ESM$attention
+# ESM$inner_speech
+# ESM$activity
+
+## continuous:
+# ESM$wb,
+# ESM$valence_all,
+# ESM$reaction_all,
+# ESM$ffmq_all,
+# ESM$ffmq_no_observe,
+# ESM$awareness,
+# ESM$describe,
+# ESM$observing,
+# ESM$nonjudging,
+# ESM$nonreactivity,
+# ESM$openness,
+# ESM$conscientiousness,
+# ESM$extraversion,
+# ESM$agreeableness,
+# ESM$neuroticism,
+# ESM$clarity_all,
+# ESM$interesting_all
+
+
+# paired t test?  - we say that in pre-reg but i think it's anova
+
+## *attenion
+
+#wb
+round(anova(lm(
+  wb~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  wb~attention,
+  data=ESM)),
+  which="attention")
+
+ggplot(ESM,
+       aes(x=attention,y=wb,fill=attention))+
+  stat_summary(fun.y="mean", geom="bar", position=position_dodge(),
+               # aes(width=.25)
+               )+
+  stat_summary(geom="errorbar", position=position_dodge(), color='black',
+               # aes(width=.25)
+               )+
+  theme_minimal()+
+  ylab('Wellbeing')+
+  ylim(-3,3)+
+  xlab('Attention State')+
+  theme(legend.position = 'none')+
+  geom_hline(yintercept=0, linetype="solid",
+             color = "black", size=1)+
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  theme(axis.text.x = element_text(size=14))+
+  theme(axis.text.y = element_text(size=14))+
+  theme(panel.border = element_rect("black",  fill=NA))+
+  theme(plot.title = element_text(face = "bold"))+
+  theme(plot.title = element_text(hjust = 0))
+
+#valence
+round(anova(lm(
+  valence_all~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  valence_all~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=valence_all,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+#reaction
+round(anova(lm(
+  reaction_all~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  reaction_all~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=reaction_all,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+
+#clarity
+round(anova(lm(
+  clarity_all~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  clarity_all~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=clarity_all,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+#interesting
+round(anova(lm(
+  interesting_all~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  interesting_all~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=interesting_all,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+
+##inner_speech
+#wb
+round(anova(lm(
+  wb~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  wb~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=wb,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#valence
+round(anova(lm(
+  valence_all~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  valence_all~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=valence_all,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#reaction
+round(anova(lm(
+  reaction_all~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  reaction_all~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=reaction_all,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+#clarity
+round(anova(lm(
+  clarity_all~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  clarity_all~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=clarity_all,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#interesting
+round(anova(lm(
+  interesting_all~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  interesting_all~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=interesting_all,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+
+
+
+##activity
+#wb
+round(anova(lm(
+  wb~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  wb~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=wb,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+#valence
+round(anova(lm(
+  valence_all~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  valence_all~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=valence_all,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+#reaction
+round(anova(lm(
+  reaction_all~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  reaction_all~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=reaction_all,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+#clarity
+round(anova(lm(
+  clarity_all~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  clarity_all~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=clarity_all,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#interesting
+round(anova(lm(
+  interesting_all~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  interesting_all~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=interesting_all,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+```
+
+
+```{r Categorical vs Categorical}
+# attention state
+# inner speech 
+# activity
+
+#attention by inner speech
+table <- table(ESM$attention, ESM$inner_speech)
+table
+chisq.test(table, simulate.p.value = T)
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=T)
+
+table1::label(ESM$inner_speech) <- "Inner Speech"
+table1::label(ESM$attention) <- "Attention State"
+table1::table1(~inner_speech | attention
+               , data = ESM)  ##this is an important result to show yes you have inner speech even when present!!!!
+#flipped
+table1::table1(~attention | inner_speech
+               , data = ESM)
+
+
+
+#attention by activity
+table <- table(ESM_inner$attention, ESM_inner$activity)
+table
+chisq.test(table, simulate.p.value = T)
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=T)
+
+table1::label(ESM_inner$activity) <- "Activity"
+table1::label(ESM_inner$attention) <- "Attention State"
+table1::table1(~activity | attention
+               , data = ESM_inner) 
+
+
+#inner speech by activity
+table <- table(ESM_inner$activity, ESM_inner$inner_speech)
+table
+chisq.test(table, simulate.p.value = T)
+# chisq.posthoc.test::chisq.posthoc.test(table,
+#                    method = "bonferroni",
+#                    round = 3,
+#                    simulate.p.value=T)
+
+
+table1::label(ESM_inner$activity) <- "Activity"
+table1::label(ESM_inner$inner_speech) <- "Inner Speech"
+table1::table1(~activity | inner_speech
+               , data = ESM_inner) 
+
+```
+
+
+```{r As individual MLMs}
+
+##NOTE - do the next chunk (confirmatory analyses) FIRST, then go back and run this block.
+
+
+## wb by:
+# ESM_inner$attention
+
+ESM_inner <- ESM_inner %>%
+  mutate(attention = ifelse(attention == "Present", 1, -1))
+
+ESM_inner$attention
+
+#attention
+model00_fit <- lmer(formula =
+                      wb ~ attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+
+summary(model00_fit)
+Anova(model00_fit, type=3)
+confint(model00_fit)
+
+##I think I need to compare against a null for these
+#Note modelcompare_fit will be the same when the DV is the same...
+modelcompare_fit <- lmer(formula =
+                      wb ~ 
+                        # attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+
+round(r.squaredLR(model00_fit)[1],4) - 
+  round(r.squaredLR(modelcompare_fit)[1],4)
+
+
+
+#valence
+model00_fit <- lmer(formula =
+                      wb ~ valence_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+
+modelcompare_fit <- lmer(formula =
+                      wb ~ 
+                       # valence_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+
+r.squaredLR(model00_fit)[1] - 
+  r.squaredLR(modelcompare_fit)[1]
+
+
+#reaction
+model00_fit <- lmer(formula =
+                      wb ~ reaction_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#clarity
+model00_fit <- lmer(formula =
+                      wb ~ clarity_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+
+
+
+r.squaredLR(model00_fit)[1] - 
+  r.squaredLR(modelcompare_fit)[1]
+
+
+#interesting
+model00_fit <- lmer(formula =
+                      wb ~ interesting_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+
+r.squaredLR(model00_fit)[1] - 
+  r.squaredLR(modelcompare_fit)[1]
+
+
+#activity
+model00_fit <- lmer(formula =
+                      wb ~ activity+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+
+##
+
+
+
+## attention by --> skip because DV being binary doesn't work
+
+
+##
+
+## valence by:
+
+#attention
+model00_fit <- lmer(formula =
+                      valence_all ~ attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+modelcompare_fit <- lmer(formula =
+                        valence_all ~ 
+                          # attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+
+r.squaredLR(model00_fit)[1] - 
+  r.squaredLR(modelcompare_fit)[1]
+
+#wb
+model00_fit <- lmer(formula =
+                      valence_all ~ wb+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#reaction
+model00_fit <- lmer(formula =
+                      valence_all ~ reaction_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#clarity
+model00_fit <- lmer(formula =
+                      valence_all ~ clarity_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#interesting
+model00_fit <- lmer(formula =
+                      valence_all ~ interesting_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#activity
+model00_fit <- lmer(formula =
+                      valence_all ~ activity+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+##
+
+## reaction by:
+
+#wb
+model00_fit <- lmer(formula =
+                      reaction_all ~wb+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+#attention
+model00_fit <- lmer(formula =
+                      reaction_all ~ attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+Anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+ESM_inner$attention
+
+
+#valence
+model00_fit <- lmer(formula =
+                      reaction_all ~ valence_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+
+#clarity
+model00_fit <- lmer(formula =
+                      reaction_all ~ clarity_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#interesting
+model00_fit <- lmer(formula =
+                      reaction_all ~ interesting_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#activity
+model00_fit <- lmer(formula =
+                      reaction_all ~ activity+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+##
+
+## clarity by:
+
+#attention
+model00_fit <- lmer(formula =
+                      clarity_all ~ attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#valence
+model00_fit <- lmer(formula =
+                      clarity_all ~ valence_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#reaction
+model00_fit <- lmer(formula =
+                      clarity_all ~ reaction_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#clarity
+model00_fit <- lmer(formula =
+                      clarity_all ~ wb+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#interesting
+model00_fit <- lmer(formula =
+                      clarity_all ~ interesting_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#activity
+model00_fit <- lmer(formula =
+                      clarity_all ~ activity+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+##
+
+## Interesting by:
+
+#attention
+model00_fit <- lmer(formula =
+                      interesting_all ~ attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#valence
+model00_fit <- lmer(formula =
+                      interesting_all ~ valence_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#reaction
+model00_fit <- lmer(formula =
+                      interesting_all ~ reaction_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#clarity
+model00_fit <- lmer(formula =
+                      interesting_all ~ clarity_all+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#wb
+model00_fit <- lmer(formula =
+                      interesting_all ~wb+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+#activity
+model00_fit <- lmer(formula =
+                      interesting_all ~ activity+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+# confint(model00_fit)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+range(ESM_inner$wb)
+
+
+```
+
+
+***************************
+
+
+#Confirmatory analyses
+
+
+Disaggregating within-person center and between-person center variables
+Make separate data sets for inner speech vs not, since that is easier for the variables like attention and activity that aren't separated like that
+```{r Person mean centering}
+##not disaggregating
+# attention
+# inner_speech 
+# activity
+# inner_experience 
+
+##disaggregating
+# wb
+# clarity_all
+# valence_all
+# reaction_all
+# interesting_all
+
+ESM <- ESM %>% group_by(PID) %>% 
+  mutate(
+    wb_mean2 = mean(wb, na.rm = T),
+    clarity_all_mean2 = mean(clarity_all, na.rm = T),
+    valence_all_mean2 = mean(valence_all, na.rm = T),
+    reaction_all_mean2 = mean(reaction_all, na.rm = T),
+    interesting_all_mean2 = mean(interesting_all, na.rm = T)
+  ) %>% ungroup() %>% 
+  mutate(
+    #these are grand mean centered variables
+        wb_c2 = scale(wb, center = T, scale = F), 
+    clarity_all_c2 = scale(clarity_all, center = T, scale = F), 
+    valence_all_c2 = scale(valence_all, center = T, scale = F), 
+    reaction_all_c2 = scale(reaction_all, center = T, scale = F), 
+    interesting_all_c2 = scale(interesting_all, center = T, scale = F),
+    #these are within-person centered variables
+         wb_cw2 = wb-wb_mean2,
+         clarity_all_cw2 = clarity_all-clarity_all_mean2,
+         valence_all_cw2 = valence_all-valence_all_mean2,
+         reaction_all_cw2 = reaction_all-reaction_all_mean2,
+         interesting_all_cw2 = interesting_all-interesting_all_mean2,
+    #these are between-person centered variables 
+             wb_cb2 = wb_c2-wb_cw2,
+         clarity_all_cb2 = clarity_all_c2-clarity_all_cw2,
+         valence_all_cb2 = valence_all_c2-valence_all_cw2,
+         reaction_all_cb2 = reaction_all_c2-reaction_all_cw2,
+         interesting_all_cb2 = interesting_all_c2-interesting_all_cw2) 
+
+
+
+```
+
+
+Create inner speech vs not datasets 
+```{r Inner speech datasets}
+#inner
+ESM_inner <- ESM %>%
+  filter(inner_speech=="Inner Speech")
+
+ESM_inner$inner_speech
+
+#no inner
+ESM_no_inner <- ESM %>%
+  filter(inner_speech!="Inner Speech")
+
+ESM_no_inner$inner_speech
+
+```
+
+
+#MLM
+
+NOTE this is all for inner speech only! 
+
+```{r Null Model}
+# unconditional means model: will the model have a grand mean (intercept) greater than 0?
+# reject the null model 
+# Run unconditional means model with summary - Using PID as the (nested) random effect
+
+#model
+model0_fit <- lmer(formula = wb ~ 1 + (1|PID), 
+              data=ESM_inner)
+summary(model0_fit)
+
+##for all of these, I was using loglik to see what fits the best. BUT loglik technically only applies when comparing a larger model that contains a smaller model; a less conservative and better way to compare is the AIC, where smallest AIC = best fitting model. Usually AIC and loglik will align 
+
+##here you want the logLik (or preferably AIC) number to decrease (closer to 0 on loglik when it's negative is better fit) each time you add variables to the model (this shows you're improving the fit of your model), then you can test if that decease is sig different 
+# StdDev of random effects is used to calculate ICC - 
+# intercept variance is between person variance (0.31) - some people do on average have higher wb (by 0.31 units) than others 
+# residual variance is within person variance (2.39) - yes meaningful fluctuation in wb from moment to moment within a person (w/ variance of 2.39) beyond what we'd expect from random chance alone
+#Fixed effect tells you there is a sig (p-value showing 0 is okay) effect of the intercept that is different from 0; the Value tells you what the value of the grand mean is for your DV (0.8 in mine; recall I had WB go from -3 to +3, so this makes sense); mean wb across all people and prompts 
+
+# note - mean happiness in killingsworth was 65/100 ; similar to mine being slightly higher than halfway point 
+
+# IMPORTANT NOTES ABOUT THIS MODEL
+# No predictors in the model (no independent variables)
+# This is the null model (beginning of intercept only)
+# Measuring the grand mean here
+
+#so, intercept (grand mean) is significant so we can reject null model that it doesn't equal 0 
+# there is enough variability to conduct an MLM
+
+#used for ICC table in below block
+wb_values <- summary(model0_fit)
+
+
+##confidence intervals:
+#using lme4:
+round(confint(model0_fit, oldNames=FALSE),2)
+
+```
+
+
+ICC calculation
+```{r Overall ICC}
+##ICC calculation
+# Calculate intra-class correlation coefficient (ICC) for the unconditional means model
+
+VarCorr(model0_fit)
+RandomEffects <- as.data.frame(VarCorr(model0_fit))
+RandomEffects
+ICC_between <- RandomEffects[1,4]/(RandomEffects[1,4]+RandomEffects[2,4]) 
+round(ICC_between*100,2)
+# of the total variance in DV, XX% is attributable to between-person variation 
+# Any value below 5% here suggests clustering is not taking place and MLM should not take place
+
+round((100-(ICC_between*100)),2)
+# whereas XX% is attributatable to within-person variation.
+
+#consider adding info on null model - as a first step, the intra-class correlation coefficient (ICC) for the unconditional means model was calculated and revealed that of the total variance in mood scores, 27.53% is attributable to between-person variation, whereas 72.47% is attributable to within-person variation. This suggests that clustering is taking place and multilevel modeling is appropriate in our data. 
+
+
+```
+
+
+Do ICC for each PV to ensure there is sufficeint within and between variation to disaggregate 
+```{r ICC per Variable}
+
+##possible variables to disaggregate:
+# wb
+# clarity
+# valence
+# reaction
+# interesting
+
+clarity_fit <- lmer(formula = clarity_all ~ 1 + (1|PID), 
+              data=ESM_inner)
+summary(clarity_fit) #recall Fixed effect tells you there is a sig (p-value showing 0 is okay) effect of the intercept that is different from 0; the Value tells you what the value of the grand mean is for your PV
+clarity_values <- summary(clarity_fit) 
+VarCorr(clarity_fit)
+RandomEffects_clarity <- as.data.frame(VarCorr(clarity_fit))
+RandomEffects_clarity
+ICC_between_clarity <- RandomEffects_clarity[1,4]/(RandomEffects_clarity[1,4]+RandomEffects_clarity[2,4]) 
+round(ICC_between_clarity*100,2)
+round((100-(ICC_between_clarity*100)),2)
+
+valence_fit <- lmer(formula = valence_all ~ 1 + (1|PID), 
+              data=ESM_inner)
+summary(valence_fit) #recall Fixed effect tells you there is a sig (p-value showing 0 is okay) effect of the intercept that is different from 0; the Value tells you what the value of the grand mean is for your PV
+valence_values <- summary(valence_fit) 
+VarCorr(valence_fit)
+RandomEffects_valence <- as.data.frame(VarCorr(valence_fit))
+RandomEffects_valence
+ICC_between_valence <- RandomEffects_valence[1,4]/(RandomEffects_valence[1,4]+RandomEffects_valence[2,4]) 
+round(ICC_between_valence*100,2)
+round((100-(ICC_between_valence*100)),2)
+
+reaction_fit <- lmer(formula = reaction_all ~ 1 + (1|PID), 
+              data=ESM_inner)
+summary(reaction_fit) #recall Fixed effect tells you there is a sig (p-value showing 0 is okay) effect of the intercept that is different from 0; the Value tells you what the value of the grand mean is for your PV
+reaction_values <- summary(reaction_fit) 
+VarCorr(reaction_fit)
+RandomEffects_reaction <- as.data.frame(VarCorr(reaction_fit))
+RandomEffects_reaction
+ICC_between_reaction <- RandomEffects_reaction[1,4]/(RandomEffects_reaction[1,4]+RandomEffects_reaction[2,4]) 
+round(ICC_between_reaction*100,2)
+round((100-(ICC_between_reaction*100)),2)
+
+
+interesting_fit <- lmer(formula = interesting_all ~ 1 + (1|PID), 
+              data=ESM_inner)
+summary(interesting_fit) #recall Fixed effect tells you there is a sig (p-value showing 0 is okay) effect of the intercept that is different from 0; the Value tells you what the value of the grand mean is for your PV
+interesting_values <- summary(interesting_fit) 
+VarCorr(interesting_fit)
+RandomEffects_interesting <- as.data.frame(VarCorr(interesting_fit))
+RandomEffects_interesting
+ICC_between_interesting <- RandomEffects_interesting[1,4]/(RandomEffects_interesting[1,4]+RandomEffects_interesting[2,4]) 
+round(ICC_between_interesting*100,2)
+round((100-(ICC_between_interesting*100)),2)
+
+#create a table of this to make it clear including wb ICC
+
+ICC_table <- matrix(c(
+                    ICC_between*100,(100-(ICC_between*100)), 
+                    wb_values$coefficients[1], wb_values$coefficients[5], 
+                    ICC_between_clarity*100,(100-(ICC_between_clarity*100)),
+                    clarity_values$coefficients[1], clarity_values$coefficients[5], 
+                    ICC_between_valence*100,(100-(ICC_between_valence*100)),
+                    valence_values$coefficients[1], valence_values$coefficients[5], 
+                    ICC_between_reaction*100,(100-(ICC_between_reaction*100)),
+                    reaction_values$coefficients[1], reaction_values$coefficients[5], 
+                    ICC_between_interesting*100,(100-(ICC_between_interesting*100)),
+                    interesting_values$coefficients[1], interesting_values$coefficients[5]
+                    ), 
+                    ncol=4,byrow=TRUE)
+
+
+colnames(ICC_table) <- c("Between-Variance %", "Within-Variance %", "Estimate", "P-value")
+rownames(ICC_table) <- c("Wellbeing (-3:3)","Clarity (1:7)","Valence (-3:3)", "Reaction (1:7)", "Interesting (1:7)")
+ICC_table <- round(ICC_table,3)
+ICC_table
+# all seem good to go; use this table to prove  
+# p value just tells you the estimate is diff from 0; body reaction not being sig is okay since it's a -3:+3 scale.... right? I think so....
+
+```
+
+```{r Activity}
+#activity alone in mlm as further support about it being a covariate
+
+modela_fit <- lmer(formula = wb ~ activity + (1|PID), 
+              data=ESM_inner)
+summary(modela_fit)
+car::Anova(modela_fit, type=3)
+anova(modela_fit)
+round(confint(modela_fit, oldNames=FALSE),2)
+
+(r.squaredLR(modela_fit)[1]) - (r.squaredLR(model0_fit)[1])
+
+
+#yes it should be a covariate
+```
+
+```{r Clarity}
+
+modelc_fit <- lmer(formula = wb ~ clarity_all_cw2 + (1|PID), 
+              data=ESM_inner)
+summary(modelc_fit)
+
+round(confint(modelc_fit, oldNames=FALSE),2)
+
+
+(r.squaredLR(modelc_fit)[1]) - (r.squaredLR(model0_fit)[1])
+
+```
+
+
+Adding PV's to model -  
+full model =  conditional growth model = model with all your PV's
+
+##Model 1: attention state
+```{r Without Covariates}
+
+model1_fit <- lmer(formula = wb ~
+                attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+
+
+# the intercept here represents the referent category, which I can change 
+summary(model1_fit)
+
+#interpreting results:
+# Fixed effects:
+#   - Intercept: expected value of WB for prototypical person on a prototypical prompt is XX
+# -   aware_cw2: on prompts when the prototypical person's attention was higher than normal, their wb tended to be XX units higher than usual, which was stat sig 
+# Random effects:
+# - intercept: there is XX between-person variance in individual's expected value of WB
+
+#generally can ignore the correlation table thing:
+# https://stats.stackexchange.com/questions/57240/how-do-i-interpret-the-correlations-of-fixed-effects-in-my-glmer-output
+
+#for singular fit error: 
+#When you obtain a singular fit, this is often indicating that the model is overfitted – that is, the random effects structure is too complex to be supported by the data, which naturally leads to the advice to remove the most complex part of the random effects structure (usually random slopes)
+# summary(rePCA(model1_fit))
+
+
+
+# https://stats.stackexchange.com/questions/339678/interpreting-effects-of-categorical-and-continuous-predictors-in-multiple-linear
+#but we can do this on the model to see the "global" effect of the factor
+anova(model1_fit, type=3)
+
+
+#the difference in MLM vs ANOVA for activity, which is the same for a linear regression vs ANOVA generally, is that:
+    # In the ANOVA, the categorical variable is effect coded. This means that the categories  are coded with 1’s and -1 so that each category’s mean is compared to the grand mean.
+    # In the regression, the categorical variable is dummy coded**, which means that each  category’s intercept is compared to the reference group‘s intercept.  Since the intercept is defined as the mean value when all other predictors = 0, and there are no other  predictors, the three intercepts are just means.
+
+
+confint(model1_fit)
+
+
+#effect size estimate 
+# compare with- model0_fit - null
+# library(MuMIn)
+(r.squaredLR(model1_fit)[1]) - (r.squaredLR(model0_fit)[1])
+
+
+# #plot within-person differences of main effects
+# ##repeat this to ensure direction of effects is as expected
+ggplot(data=ESM_inner, aes(x=attention,
+                            y=wb_cw2, group=factor(PID), colour="gray"), legend=FALSE)+
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, lty=1, size=.05, color="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Awareness") + ylab("Wellbeing") +
+  theme_classic() +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Within-Person Association of Attention State and Wellbeing") +
+    # scale_x_continuous(limits=c(1,5),   #check range of PV
+    #                  breaks = c(1,2,3,4,5)
+    #                  ) +
+    #       scale_y_continuous(limits=c(-3,3),
+    #                  breaks = c(-3, -2, -1, 0, 1, 2, 3)
+    #                  ) +
+  geom_hline(yintercept=0,
+               # color="red",
+               size=1)+
+  xlab("Attention State")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+```
+
+```{r test factors in mlm, include=FALSE}
+
+# ESM_inner_test <- ESM_inner
+# 
+# ESM_inner_test$activity <- as.factor(ESM_inner_test$activity)
+# ESM_inner_test$attention <- ESM_inner_test$attention
+# 
+# # ESM_inner_test$attention <- factor(ESM_inner_test$attention,
+#                                    # levels = c("Present", "Not Present"))
+# 
+# 
+# #try to get activity and attention as one factor variable
+# modeltest_fit <- lmer(formula = wb ~
+#                      activity+
+#                 attention+
+#                  (1|PID), 
+#                     data=ESM_inner_test,
+#                    REML = F) #must set this to F to return loglik and AIC
+# summary(modeltest_fit)
+# anova(modeltest_fit, type=3)
+# anova(modeltest_fit)
+# car::Anova(modeltest_fit, type=3)
+# 
+# 
+# # lmerTest::anova(modeltest_fit)
+# 
+# 
+# 8.79/100
+# .44/6
+# 
+# 
+# ## code as 1 and 2
+ESM_inner_test <- ESM_inner
+# 
+# 
+# ESM_inner_test <- ESM_inner
+# # ESM_inner_test$activity <- as.factor(ESM_inner_test$activity)
+# ESM_inner_test$attention[ESM_inner_test$attention=="Present"]<- "1"
+# ESM_inner_test$attention[ESM_inner_test$attention=="Not Present"]<- "0"
+# ESM_inner_test$attention <- as.numeric(ESM_inner_test$attention)
+# 
+modeltest_fit <- lmer(formula = wb ~
+                     activity+
+                attention+
+                 (1|PID),
+                    data=ESM_inner_test,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(modeltest_fit)
+anova(modeltest_fit, type=3)
+
+# ESM_inner_test$activity <- as.factor(ESM_inner_test$activity)
+# 
+# 
+# #
+# # install.packages("recipes")
+# library(recipes)
+# 
+ESM_inner_test <- ESM_inner
+
+ESM_inner_test$activity[ESM_inner_test$activity=="Cognitive"]<- "0"
+ESM_inner_test$activity[ESM_inner_test$activity=="Restful"]<- "1"
+ESM_inner_test$activity[ESM_inner_test$activity=="Social"]<- "2"
+ESM_inner_test$activity[ESM_inner_test$activity=="Household"]<- "3"
+ESM_inner_test$activity[ESM_inner_test$activity=="Physical"]<- "4"
+ESM_inner_test$activity[ESM_inner_test$activity=="Other"]<- "5"
+ESM_inner_test$activity <- as.numeric(ESM_inner_test$activity)
+
+
+ESM_inner_test$activity <- factor(ESM_inner_test$activity)
+
+```
+
+```{r With Covariates}
+#check if attention is dummy coded or not 
+ESM_inner$attention
+
+#make -1 and +1 if it's not already
+# ESM_inner <- ESM_inner %>%
+#   mutate(attention = ifelse(attention == "Present", 1, -1))
+
+model1a_fit <- lmer(formula = wb ~
+                     activity+
+                      clarity_all_cw2+ #as a covariate
+                    interesting_all_cw2+ #MAKE SURE THIS IS ADDED TO ALL MODELS NOW
+                attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1a_fit)
+anova(model1a_fit, type=3)
+confint(model1a_fit)
+
+
+
+
+# test_fit <- lmer(formula = wb ~
+#                      # activity+clarity_all_cw2+ #as a covariate
+#                 attention+
+#                  (1|PID), 
+#                     data=ESM_inner,
+#                    REML = F) #m
+# tab_model(test_fit)
+
+
+#effect size 
+#change # for each variable
+modelcompare_fit <- lmer(formula = wb ~
+                     activity+
+                       clarity_all_cw2+
+                       interesting_all_cw2+
+                # attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F)
+round((r.squaredLR(model1a_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+
+
+
+
+###model comparison 
+anova(model1_fit, model1a_fit)
+
+
+
+##try scaling DV to compare easily with killingsworth
+ESM_inner_1 <- ESM_inner
+ESM_inner_1$wb <- ESM_inner_1$wb*(100/6)
+
+
+model1aa_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+ #as a covariate
+                attention+
+                 (1|PID), 
+                    data=ESM_inner_1,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1aa_fit)
+anova(model1aa_fit, type=3)
+
+```
+
+extra for karen
+```{r check individual variables}
+
+model1aa_fit <- lmer(formula = wb ~
+                     activity+
+                      clarity_all_cw2+
+                    interesting_all_cw2+
+                attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1aa_fit)
+anova(model1aa_fit, type=3)
+
+
+#effect size 
+#change # for each variable
+modelcompare1aa_fit <- lmer(formula = wb ~
+                     activity+
+                       clarity_all_cw2+
+                       interesting_all_cw2+
+                # attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F)
+round((r.squaredLR(model1aa_fit)[1]) - (r.squaredLR(modelcompare1aa_fit)[1]),4)
+
+
+## direction of interesting
+mean(ESM_inner$interesting_all[ESM_inner$attention==1])
+mean(ESM_inner$interesting_all[ESM_inner$attention==-1])
+
+
+# ggplot(ESM_inner, aes(x = interesting, y = wb, fill = attention, color=attention)) +
+#   # geom_point() +
+#   geom_smooth(method = "lm", se = FALSE) +  # Add a linear regression line
+#   labs(x = "Interesting All", y = "WB") 
+#   # + ggtitle("Correlation Plot")
+# 
+# ggplot(ESM_no_inner, aes(x = interesting, y = wb, fill = attention, color=attention)) +
+#   # geom_point() +
+#   geom_smooth(method = "lm", se = FALSE) +  # Add a linear regression line
+#   labs(x = "Interesting All", y = "WB") 
+#   # + ggtitle("Correlation Plot")
+
+```
+
+##Model 2: Mediation of Valeince
+```{r Without Covariates}
+
+#add valence in first
+model2_fit <- lmer(formula = wb ~ 
+                     attention+valence_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model2_fit)
+anova(model2_fit, type=3)
+confint(model2_fit)
+
+#effect size
+modelcompare_fit <- lmer(formula = wb ~ 
+                     attention+
+                       # valence_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+round((r.squaredLR(model2_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+#comparing model fit
+# anova(model2_fit, model1_fit)
+
+
+# #plot within-person differences of main effects
+# ##repeat this to ensure direction of effects is as expected
+
+ggplot(data=ESM_inner, aes(x=valence_all_cw2,
+                            y=wb_cw2, group=factor(PID), colour="gray"), legend=FALSE)+
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, lty=1, size=.05, color="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Objective Valence") + ylab("Wellbeing") +
+  theme_classic() +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Within-Person Association of Objective Valence and Wellbeing") +
+    # scale_x_continuous(limits=c(1,5),   #check range of PV
+    #                  breaks = c(1,2,3,4,5)
+    #                  ) +
+    #       scale_y_continuous(limits=c(-3,3),
+    #                  breaks = c(-3, -2, -1, 0, 1, 2, 3)
+    #                  ) +
+  geom_hline(yintercept=0,
+               # color="red",
+               size=1)+
+  xlab("Objective Valence \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+##mediation 
+
+#There is a lot of discussion / uncertainty online about how to properly do a mediation MLM. Just say that I use the Tingley, Dustin, et al, 2014, "Mediation" R package; and that this is a "1-1-1" mediation (hence the cw2 for each thing). The output is similar, though not exactly the same, without the cw2. 
+
+# https://cran.r-project.org/web/packages/mediation/vignettes/mediation.pdf
+# https://stats.stackexchange.com/questions/491503/mediation-analysis-for-mixed-models
+# https://stats.stackexchange.com/questions/104692/comprehending-output-from-mediation-analysis-in-r
+# https://towardsdatascience.com/doing-and-reporting-your-first-mediation-analysis-in-r-2fe423b92171
+
+#libraries can mess up results
+library(lme4)
+library(lmerTest)
+
+ESM_inner$attention <- as.factor(ESM_inner$attention)
+
+fit.totaleffect <- lme4::lmer(wb_cw2 ~ attention + (1|PID)
+                          , data=ESM_inner)
+summary(fit.totaleffect) #estimate of attention = total effect; IV to DV line
+
+
+fit.mediator<- lme4::lmer(valence_all_cw2 ~ attention + (1|PID) 
+                    , data=ESM_inner)
+summary(fit.mediator) #effect of IV onto mediator; IV to Mediator line
+
+
+fit.dv <- lme4::lmer(wb_cw2 ~ attention + valence_all_cw2 + (1|PID)
+                      , data=ESM_inner)
+summary(fit.dv) #effect of mediator on DV; Mediator to DV line (ignore IV here)
+#since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation 
+
+
+# install.packages("mediation")
+# library("mediation")
+detach("package:lmerTest", unload=TRUE)
+
+results<-mediation::mediate(fit.mediator, fit.dv, treat='attention',
+                            mediator='valence_all_cw2', na.action="na.omit")
+summary(results)
+
+#Interpretation - of the estimated 0.38 (Total Effect) increase in wellbeing that appears to be due to attention state, an estimated 0.16 (ACME) of that is actually a result of valence changes generated by attention state, while the remaining 0.23 (ADE) is from attention state itself
+# proportion of the causal effect of attention state that is mediated by valence rather than direct effect is 0.41 (Prop.Mediated)
+
+# The effect of attention state on wellbeing was partially mediated via objective valence. As Figure 1 illustrates, the coefficient between attention state and objective valence, and the coefficient between objective valence and wellbeing, was significant. A 95% confidence interval of the indirect effect was computed by using a quasi-Bayesian approximation using 1000 simulations. The indirect effect was (.25)*(.63) = .16, and the 95% confidence interval ranged from .11 to .21. Thus, the indirect effect was statistically significant (p<.001).
+
+
+# ACME is an acronym for "Average Causal Mediation Effects" - is the estimated average increase in the dependent variable among the treatment group that arrives as a result of the mediators rather than 'directly' from the treatment
+# ADE is an acronym for "Average Direct Effects"
+# Total Effect is the sum of ACME and ADE
+
+
+
+
+
+##graphing - need to manually input each part from above
+
+#these are coefficients, like regression coefficients 
+
+# install.packages("diagram")
+library(diagram)
+
+data <- c(0, "'.25***'", 0,
+          0, 0, 0, 
+          "'.63***'", "'.38***'", 0)
+M<- matrix (nrow=3, ncol=3, byrow = TRUE, data=data)
+plot<- plotmat (M, pos=c(1,2), 
+                name= c( "Objective Valence","Attention State", "WellBeing"), 
+                box.type = "rect", box.size = 0.12, box.prop=0.2,  curve=0,
+                arr.width = .08, arr.type = "simple",
+                main = "1-1-1 Multilevel Mediation Analysis")
+
+
+
+```
+
+
+
+```{r With covariates}
+
+#add valence in first
+model2a_fit <- lmer(formula = wb ~ 
+                     activity+clarity_all_cw2+interesting_all_cw2+
+                     attention+valence_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model2a_fit)
+anova(model2a_fit, type=3)
+confint(model2a_fit)
+
+#effect size
+modelcompare_fit <- lmer(formula = wb ~ 
+                     activity+
+                       clarity_all_cw2+
+                       interesting_all_cw2+
+                     # attention+
+                       valence_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+# (r.squaredLR(model2a_fit)[1]) - (r.squaredLR(modelcompare_fit)[1])
+round((r.squaredLR(model2a_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+
+
+library(lme4)
+library(lmerTest)
+
+fit.totaleffect1 <- lme4::lmer(wb_cw2 ~ attention + (1|PID)
+                        + activity+ clarity_all_cw2 + interesting_all_cw2 #covariate
+                          , data=ESM_inner)
+summary(fit.totaleffect1) #estimate of attention = total effect; IV to DV line; .19, p<.001
+Anova(fit.totaleffect1, type=3)
+
+fit.mediator1<- lme4::lmer(valence_all_cw2 ~ attention + (1|PID) 
+                     +activity+ clarity_all_cw2+ interesting_all_cw2   #covariate
+                    , data=ESM_inner)
+summary(fit.mediator1) #effect of IV onto mediator; IV to Mediator line; .12, p<.001
+Anova(fit.mediator1, type=3)
+
+fit.dv1 <- lme4::lmer(wb_cw2 ~ attention + valence_all_cw2 + (1|PID)
+                    + activity+ clarity_all_cw2 + interesting_all_cw2 #covariate
+                      , data=ESM_inner)
+summary(fit.dv1) #effect of mediator on DV; Mediator to DV line (ignore IV here); .60
+#since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation 
+Anova(fit.dv1, type=3)
+
+
+# install.packages("mediation")
+# library("mediation")
+detach("package:lmerTest", unload=TRUE)
+
+results1<-mediation::mediate(fit.mediator1, fit.dv1, treat='attention',
+                            mediator='valence_all_cw2', 
+              covariates =  c("activity", "clarity_all_cw2", "interesting_all_cw2"),  #NEW
+                            na.action="na.omit")
+summary(results1)
+
+
+#Interpretation - of the estimated 0.19 (Total Effect) increase in wellbeing that appears to be due to attention state, an estimated 0.07 (ACME) of that is actually a result of valence changes generated by attention state, while the remaining 0.12 (ADE) is from attention state itself
+# proportion of the causal effect of attention state that is mediated by valence rather than direct effect is 0.37 (Prop.Mediated)
+
+# The effect of attention state on wellbeing was partially mediated via objective valence. As Figure 1 illustrates, the coefficient between attention state and objective valence, and the coefficient between objective valence and wellbeing, was significant. A 95% confidence interval of the indirect effect was computed by using a quasi-Bayesian approximation using 1000 simulations. The indirect effect was (.12)*(.60) = .07, and the 95% confidence interval ranged from .05 to .11. Thus, the indirect effect was statistically significant (p<.001).
+
+
+# ACME is an acronym for "Average Causal Mediation Effects" - is the estimated average increase in the dependent variable among the treatment group that arrives as a result of the mediators rather than 'directly' from the treatment
+# ADE is an acronym for "Average Direct Effects"
+# Total Effect is the sum of ACME and ADE
+
+
+
+
+
+data <- c(0, "'.12***'", 0,
+          0, 0, 0, 
+          "'.60***'", "'.19***'", 0)
+M<- matrix (nrow=3, ncol=3, byrow = TRUE, data=data)
+plot<- plotmat (M, pos=c(1,2), 
+                name= c( "Thought Valence","Attention State", "Mood"), 
+                box.type = "rect", box.size = 0.12, box.prop=0.2,  curve=0,
+                arr.width = .08, arr.type = "simple",
+                main = "1-1-1 Multilevel Mediation Analysis with Covariates")
+
+
+#comparing model fit
+anova(model2a_fit, model2_fit)
+```
+
+
+##Model 3: Reactivity  Moderation
+```{r Without Covariates}
+# for interactions you just do that in the fixed part; leave the random part alone, ex. personality*(aware_cw2 + observe_cw2...) + (aware_cw2 | PID)...
+
+#just valence*reaction as PV's 
+model3_fit <- lmer(formula = wb ~
+                     # activity+clarity_all_cw2+
+            attention+
+              valence_all_cw2*reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model3_fit)
+anova(model3_fit, type=3)
+confint(model3_fit)
+
+
+#plotting interactions 
+mod<-probe_interaction(model3_fit, #use w final model
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+
+mod$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Valence*Reaction") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Valence \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+
+# ##effect sizes 
+# #of interaction
+modelcomparison_fit <- lmer(formula = wb ~
+            attention+
+              valence_all_cw2+
+              reaction_all_cw2+
+              # valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+round(r.squaredLR(model3_fit)[1] - r.squaredLR(modelcomparison_fit)[1],4)
+
+```
+
+```{r With Covariates}
+
+#just valence*reaction as PV's 
+model3a_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+
+            attention+
+              valence_all_cw2*reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model3a_fit)
+anova(model3a_fit, type=3)
+confint(model3a_fit)
+
+
+#plotting interactions 
+??probe_interaction
+
+mod<-probe_interaction(model3a_fit, #use w final model
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2, 
+                  interval = TRUE, #95% CI is default
+                  modx.values = "plus-minus" #gets rid of mean 
+                  # alpha = .05
+                  )
+
+mod$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  # ggtitle("Valence*Reaction") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Thought Valence")+
+  ylab("WellBeing")+ 
+  guides(fill = guide_legend(title = "Reactivity", 
+                             override.aes = list(color = NA)
+                             )) 
+
+
+# ##effect sizes 
+# #of interaction
+modelcomparison_fit <- lmer(formula = wb ~
+                  activity+
+                    clarity_all_cw2+
+                 attention+
+              valence_all_cw2+
+              reaction_all_cw2+
+              # valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+round(r.squaredLR(model3a_fit)[1] - r.squaredLR(modelcomparison_fit)[1],4)
+
+
+
+#comparison
+anova(model3a_fit, model3_fit)
+
+
+#post-hoc interaction
+library(interactions)
+# fiti <- lm(mpg ~ hp * wt, data = mtcars)
+sim_slopes(model3a_fit, pred = valence_all_cw2, modx = reaction_all_cw2, jnplot = TRUE)
+
+
+
+interact_plot(model3a_fit, pred = valence_all_cw2, modx = reaction_all_cw2, interval = TRUE,
+                                modx.values = "plus-minus")
+
+
+interact_plot(model3a_fit, pred = valence_all_cw2, modx = reaction_all_cw2,  plot.points = TRUE, modx.values = "plus-minus", interval=T)
+
+```
+
+```{r 3-way interaction}
+
+model3b_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+
+              valence_all_cw2*reaction_all_cw2*attention+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model3b_fit)
+anova(model3b_fit, type=3)
+confint(model3b_fit)
+
+
+
+mod_above<-probe_interaction(model3b_fit, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  # ggtitle("Above-Median ffmq_all Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) 
+ # + xlab("Valence \n (higher = more positive)")+
+ #  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+
+```
+
+
+```{r MLM reporting package}
+
+# https://cran.r-project.org/web/packages/sjPlot/vignettes/tab_mixed.html
+
+# install.packages("sjPlot")
+library(sjPlot)
+
+tab_model(model3a_fit)
+
+tab_model(model1a_fit, model2a_fit 
+          # ,model3a_fit
+          )
+
+```
+
+
+
+#MLM Assumptions
+
+```{r Linearity}
+##assumption setup:
+# https://ademos.people.uic.edu/Chapter18.html
+# install.packages("HLMdiag")
+# install.packages("DHARMa")
+library("HLMdiag")
+library("DHARMa")
+
+
+#assumption 1: linearity - assumption that your data follows a straight line (though the models can be expanded to handle curvilinear data).
+# Graphically, plotting the model residuals (the difference between the observed value and the model-estimated value) vs the predictor is one simple way to test. If a pattern emerges (anything that looks non-random), a higher order term may need to be included or you may need to mathematically transform a predictor/response. 
+#resid() calls for the residuals of the model, wb is DV- we're plotting the residuals vs observered DV 
+
+# plot(resid(model1_fit),
+#      ESM_inner$wb)
+plot(resid(model1a_fit),
+     ESM_inner$wb) 
+
+# plot(resid(model2_fit),
+#      ESM_inner$wb) 
+plot(resid(model2a_fit),
+     ESM_inner$wb) 
+
+# plot(resid(model3_fit),
+#      ESM_inner$wb) 
+plot(resid(model3a_fit),
+     ESM_inner$wb) 
+```
+
+```{r Variance}
+#assumption 2: homogeneity of variance - variance of residuals is equal across groups (groups here = at level of individual)
+# This procedure is a variation of “Levene’s Test”. Essentially, we’ll extract the residuals from the model, place them in our original table, take their absolute value, and then square them. Finally we’ll take a look at the ANOVA of the between subjects residuals.
+#assumption is that the variance is not going to differ, so we would hope to see NO STATISTICAL DIFFERENCES in the following procedure (i.e. p>0.05) 
+
+ESM_inner$model1_fit.Res<- residuals(model1_fit) #extracts the residuals and places them in a new column in our original data table
+ESM_inner$Abs.model1_fit.Res <-abs(ESM_inner$model1_fit.Res) #creates a new column with the absolute value of the residuals
+ESM_inner$model1_fit.Res2 <- ESM_inner$Abs.model1_fit.Res^2 #squares the absolute values of the residuals to provide the more robust estimate
+Levene.model1_fit <- lm(model1_fit.Res2 ~ PID, data=ESM_inner) #ANOVA of the squared residuals
+anova(Levene.model1_fit) #displays the results
+# Since the p value is greater than 0.05, we can say that the variance of the residuals is equal and therefore the assumption of homoscedasticity is met 
+plot(model1_fit) #creates a fitted vs residual plot - even spread across horizontal line? Not sure what this is meant to look like...
+#there should also be a x axis x=0 line so it's quadrants
+abline(v = 0) 
+
+
+
+ESM_inner$model1a_fit.Res<- residuals(model1a_fit) 
+ESM_inner$Abs.model1a_fit.Res <-abs(ESM_inner$model1a_fit.Res)
+ESM_inner$model1a_fit.Res2 <- ESM_inner$Abs.model1a_fit.Res^2 
+Levene.model1a_fit <- lm(model1a_fit.Res2 ~ PID, data=ESM_inner) 
+anova(Levene.model1a_fit) 
+# Since the p value is greater than 0.05, we can say that the variance of the residuals is equal and therefore the assumption of homoscedasticity is met 
+plot(model1a_fit) 
+
+
+
+# ESM_inner$model2_fit.Res<- residuals(model2_fit) 
+# ESM_inner$Abs.model2_fit.Res <-abs(ESM_inner$model2_fit.Res)
+# ESM_inner$model2_fit.Res2 <- ESM_inner$Abs.model2_fit.Res^2 
+# Levene.model2_fit <- lm(model2_fit.Res2 ~ PID, data=ESM_inner) 
+# anova(Levene.model2_fit) 
+# # Since the p value is greater than 0.05, we can say that the variance of the residuals is equal and therefore the assumption of homoscedasticity is met 
+# plot(model2_fit) 
+
+
+ESM_inner$model2a_fit.Res<- residuals(model2a_fit) 
+ESM_inner$Abs.model2a_fit.Res <-abs(ESM_inner$model2a_fit.Res)
+ESM_inner$model2a_fit.Res2 <- ESM_inner$Abs.model2a_fit.Res^2 
+Levene.model2a_fit <- lm(model2a_fit.Res2 ~ PID, data=ESM_inner) 
+anova(Levene.model2a_fit) 
+# Since the p value is greater than 0.05, we can say that the variance of the residuals is equal and therefore the assumption of homoscedasticity is met 
+plot(model2a_fit) 
+
+# 
+# ESM_inner$model3_fit.Res<- residuals(model3_fit) 
+# ESM_inner$Abs.model3_fit.Res <-abs(ESM_inner$model3_fit.Res)
+# ESM_inner$model3_fit.Res2 <- ESM_inner$Abs.model3_fit.Res^2 
+# Levene.model3_fit <- lm(model3_fit.Res2 ~ PID, data=ESM_inner) 
+# anova(Levene.model3_fit) 
+# # Since the p value is greater than 0.05, we can say that the variance of the residuals is equal and therefore the assumption of homoscedasticity is met 
+# plot(model3_fit) 
+
+
+ESM_inner$model3a_fit.Res<- residuals(model3a_fit) 
+ESM_inner$Abs.model3a_fit.Res <-abs(ESM_inner$model3a_fit.Res)
+ESM_inner$model3a_fit.Res2 <- ESM_inner$Abs.model3a_fit.Res^2 
+Levene.model3a_fit <- lm(model3a_fit.Res2 ~ PID, data=ESM_inner) 
+anova(Levene.model3a_fit) 
+# Since the p value is greater than 0.05, we can say that the variance of the residuals is equal and therefore the assumption of homoscedasticity is met 
+plot(model3a_fit) 
+
+```
+
+
+```{r Residuals}
+
+##assumption 3: residuals are normally distributed - MLM assume that the residuals of the analysis ARE normally distributed (unlike regression models)
+# QQ plots can provide an estimation of where the standardized residuals lie with respect to normal quantiles. Strong deviation from the provided line indicates that the residuals themselves are not normally distributed.
+##qq plot (similar to a diagnostic plot provided by the lm function) for an estimation of the linearity of the residuals
+require("lattice")
+# qqmath(model1_fit, id=0.05) #id: identifies values that may be exerting undue influence on the model (i.e. outliers)
+#id thing is too annoying let's just hide that...
+# qqmath(model1_fit)
+# There is some deviation from from the expected normal line towards the tails, but overall the line looks straight and therefore pretty normal and suggests that the assumption is not violated
+
+qqmath(model1a_fit)
+# qqmath(model2_fit)
+qqmath(model2a_fit)
+# qqmath(model3_fit)
+qqmath(model3a_fit)
+
+
+```
+
+```{r Normality}
+#assumption 4: normality of predictors and DV's 
+
+# inspect ncol frequency distribution  - visual inspection shows these are normally distributed (hopefully)
+
+#check predictors seem normally distributed 
+#just do in chunks to make easier to interpret 
+library(reshape2)
+
+#wb
+df <- ESM_inner %>%
+  dplyr::select(
+               wb_cw2, wb_cb2, 
+                PID)
+df.plots <- melt(df,id.vars='PID')
+ggplot(df.plots, aes(value)) +
+  facet_wrap(~variable, scales='free_x') + 
+   theme(
+      strip.text.x = element_text(
+        size = 16, face = "bold"))+
+  geom_histogram(binwidth = function(x) 2*IQR(x) / length(x)^(1/3))+
+    # theme_classic() +
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5))
+
+hist(ESM_inner$wb)
+
+
+#clarity
+df <- ESM_inner %>%
+  dplyr::select(
+               clarity_all_cw2, clarity_all_cb2, 
+                PID)
+df.plots <- melt(df,id.vars='PID')
+ggplot(df.plots, aes(value)) +
+  facet_wrap(~variable, scales='free_x') + 
+   theme(
+      strip.text.x = element_text(
+        size = 16, face = "bold"))+
+  geom_histogram(binwidth = function(x) 2*IQR(x) / length(x)^(1/3))+
+    # theme_classic() +
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5))
+
+hist(ESM_inner$clarity_all)
+
+
+#valence
+df <- ESM_inner %>%
+  dplyr::select(
+               valence_all_cw2, valence_all_cb2, 
+                PID)
+df.plots <- melt(df,id.vars='PID')
+ggplot(df.plots, aes(value)) +
+  facet_wrap(~variable, scales='free_x') + 
+   theme(
+      strip.text.x = element_text(
+        size = 16, face = "bold"))+
+  geom_histogram(binwidth = function(x) 2*IQR(x) / length(x)^(1/3))+
+    # theme_classic() +
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5))
+
+hist(ESM_inner$valence_all)
+
+
+#reaction
+df <- ESM_inner %>%
+  dplyr::select(
+               reaction_all_cw2, reaction_all_cb2, 
+                PID)
+df.plots <- melt(df,id.vars='PID')
+ggplot(df.plots, aes(value)) +
+  facet_wrap(~variable, scales='free_x') + 
+   theme(
+      strip.text.x = element_text(
+        size = 16, face = "bold"))+
+  geom_histogram(binwidth = function(x) 2*IQR(x) / length(x)^(1/3))+
+    # theme_classic() +
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5))
+
+hist(ESM_inner$reaction_all)
+
+
+#interesting
+df <- ESM_inner %>%
+  dplyr::select(
+               interesting_all_cw2, interesting_all_cb2, 
+                PID)
+df.plots <- melt(df,id.vars='PID')
+ggplot(df.plots, aes(value)) +
+  facet_wrap(~variable, scales='free_x') + 
+   theme(
+      strip.text.x = element_text(
+        size = 16, face = "bold"))+
+  geom_histogram(binwidth = function(x) 2*IQR(x) / length(x)^(1/3))+
+    # theme_classic() +
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5))
+
+hist(ESM_inner$interesting_all)
+
+
+
+```
+
+```{r Extra; Multicollinearity}
+##to test for multicollinearity amongs PV's, use VIF (variance inflation factor) function
+# If VIF > 4.0 then I generally assume multicollinearity remove all those Predictor Variables before fitting them into my model
+
+# car::vif(model1_fit) #not enough terms 
+car::vif(model1a_fit)
+# car::vif(model2_fit)
+car::vif(model2a_fit)
+# car::vif(model3_fit)
+car::vif(model3a_fit)
+
+```
+
+
+
+************************
+
+#Exploratory analyses
+
+##Trait Mindfulness 3-way Moderations
+
+I'm including just the main effects and a 3-way effect; not the 2-way interactions
+- not sure if i need to include activity/clarity/attention here, but no errrors so far so leave I guess
+
+--> make sure axis titles are correct, I think I need to find/replace them after the first batch
+
+```{r FFMQ total}
+model4a_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+ffmq_all+
+              valence_all_cw2:reaction_all_cw2:ffmq_all+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4a_fit)
+anova(model4a_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$ffmq_all)
+ESM_inner_ffmq_all_above <- ESM_inner %>%
+  filter(ffmq_all > median(ffmq_all))
+length(unique(ESM_inner_ffmq_all_above$PID))
+# ESM_inner_ffmq_all_above$ffmq_all
+ESM_inner_ffmq_all_below <- ESM_inner %>%
+  filter(ffmq_all < median(ffmq_all))
+length(unique(ESM_inner_ffmq_all_below$PID))
+# ESM_inner_ffmq_all_below$ffmq_all
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4a_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_ffmq_all_above,
+                   REML = F)
+
+model4a_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_ffmq_all_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4a_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median ffmq_all Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Valence \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4a_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median ffmq_all Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Valence \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+
+#try attentional state*FFMQ
+model_new_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention*ffmq_all+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model_new_fit)
+anova(model_new_fit, type=3)
+
+```
+
+```{r FFMQ Total minus Observing}
+model4b_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+ffmq_no_observe+
+              valence_all_cw2:reaction_all_cw2:ffmq_no_observe+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4b_fit)
+anova(model4b_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$ffmq_no_observe)
+ESM_inner_ffmq_no_observe_above <- ESM_inner %>%
+  filter(ffmq_no_observe > median(ffmq_no_observe))
+length(unique(ESM_inner_ffmq_no_observe_above$PID))
+# ESM_inner_ffmq_no_observe_above$ffmq_no_observe
+ESM_inner_ffmq_no_observe_below <- ESM_inner %>%
+  filter(ffmq_no_observe < median(ffmq_no_observe))
+length(unique(ESM_inner_ffmq_no_observe_below$PID))
+# ESM_inner_ffmq_no_observe_below$ffmq_no_observe
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4b_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_ffmq_no_observe_above,
+                   REML = F)
+
+model4b_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_ffmq_no_observe_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4b_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median ffmq_no_observe Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4b_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median ffmq_no_observe Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+#try attentional state*FFMQ
+model_new_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention*ffmq_no_observe+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model_new_fit)
+anova(model_new_fit, type=3)
+
+
+```
+
+```{r FFMQ Awareness}
+model4c_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+awareness+
+              valence_all_cw2:reaction_all_cw2:awareness+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4c_fit)
+anova(model4c_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$awareness)
+ESM_inner_awareness_above <- ESM_inner %>%
+  filter(awareness > median(awareness))
+length(unique(ESM_inner_awareness_above$PID))
+# ESM_inner_awareness_above$awareness
+ESM_inner_awareness_below <- ESM_inner %>%
+  filter(awareness < median(awareness))
+length(unique(ESM_inner_awareness_below$PID))
+# ESM_inner_awareness_below$awareness
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4c_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_awareness_above,
+                   REML = F)
+
+model4c_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_awareness_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4c_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median awareness Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4c_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median awareness Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+#try attentional state*FFMQ
+model_new_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention*awareness+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model_new_fit)
+anova(model_new_fit, type=3)
+
+
+```
+
+```{r Describe}
+
+model4d_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+describe+
+              valence_all_cw2:reaction_all_cw2:describe+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4d_fit)
+anova(model4d_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$describe)
+ESM_inner_describe_above <- ESM_inner %>%
+  filter(describe > median(describe))
+length(unique(ESM_inner_describe_above$PID))
+# ESM_inner_describe_above$describe
+ESM_inner_describe_below <- ESM_inner %>%
+  filter(describe < median(describe))
+length(unique(ESM_inner_describe_below$PID))
+# ESM_inner_describe_below$describe
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4d_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_describe_above,
+                   REML = F)
+
+model4d_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_describe_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4d_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median describe Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4d_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median describe Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+```
+
+```{r Observing}
+model4e_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+observing+
+              valence_all_cw2:reaction_all_cw2:observing+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4e_fit)
+anova(model4e_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$observing)
+ESM_inner_observing_above <- ESM_inner %>%
+  filter(observing > median(observing))
+length(unique(ESM_inner_observing_above$PID))
+# ESM_inner_observing_above$observing
+ESM_inner_observing_below <- ESM_inner %>%
+  filter(observing < median(observing))
+length(unique(ESM_inner_observing_below$PID))
+# ESM_inner_observing_below$observing
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4e_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_observing_above,
+                   REML = F)
+
+model4e_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_observing_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4e_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median observing Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4e_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median observing Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+```
+
+```{r Nonjudging}
+model4f_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+nonjudging+
+              valence_all_cw2:reaction_all_cw2:nonjudging+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4f_fit)
+anova(model4f_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$nonjudging)
+ESM_inner_nonjudging_above <- ESM_inner %>%
+  filter(nonjudging > median(nonjudging))
+length(unique(ESM_inner_nonjudging_above$PID))
+# ESM_inner_nonjudging_above$nonjudging
+ESM_inner_nonjudging_below <- ESM_inner %>%
+  filter(nonjudging < median(nonjudging))
+length(unique(ESM_inner_nonjudging_below$PID))
+# ESM_inner_nonjudging_below$nonjudging
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4f_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_nonjudging_above,
+                   REML = F)
+
+model4f_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_nonjudging_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4f_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median nonjudging Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4f_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median nonjudging Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+```
+
+```{r Nonreactivity}
+model4g_fit <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+nonreactivity+
+              valence_all_cw2:reaction_all_cw2:nonreactivity+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model4g_fit)
+anova(model4g_fit, type=3)
+
+###plotting 3-way is a pain
+
+## Create above mean vs below MEDIAN dataframes
+
+# mean(ESM_inner$nonreactivity)
+ESM_inner_nonreactivity_above <- ESM_inner %>%
+  filter(nonreactivity > median(nonreactivity))
+length(unique(ESM_inner_nonreactivity_above$PID))
+# ESM_inner_nonreactivity_above$nonreactivity
+ESM_inner_nonreactivity_below <- ESM_inner %>%
+  filter(nonreactivity < median(nonreactivity))
+length(unique(ESM_inner_nonreactivity_below$PID))
+# ESM_inner_nonreactivity_below$nonreactivity
+
+## add in the 2-way interaction terms for each dataframe (by removing ffmq)
+model4g_fit_above <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_nonreactivity_above,
+                   REML = F)
+
+model4g_fit_below <- lmer(formula = wb ~
+            activity+
+            clarity_all_cw2+
+            attention+
+             valence_all_cw2+reaction_all_cw2+
+              valence_all_cw2:reaction_all_cw2+
+                 (1|PID),
+                    data=ESM_inner_nonreactivity_below,
+                   REML = F)
+
+#side by side doesn't work with these
+mod_above<-probe_interaction(model4g_fit_above, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_above$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Above-Median nonreactivity Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+  
+#
+mod_below<-probe_interaction(model4g_fit_below, 
+                  pred = valence_all_cw2,
+                  modx = reaction_all_cw2,
+                  alpha = .05)
+mod_below$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Below Median nonreactivity Score") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Reaction \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+```
+
+
+#Other Exploratory Analyses
+
+```{r Interestingness Moderation}
+
+model5_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+
+            attention+ 
+              valence_all_cw2*reaction_all_cw2+
+              valence_all_cw2*interesting_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+summary(model5_fit)
+anova(model5_fit, type=3)
+
+
+mod<-probe_interaction(model5_fit, #use w final model
+                  pred = valence_all_cw2,
+                  modx = interesting_all_cw2,
+                  alpha = .05)
+
+mod$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Valence*Interestingness") +
+    scale_x_continuous(limits=c(-3,3),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Valence \n (higher = more positive)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+
+ggplot(data=ESM_inner, aes(x=interesting_all_cw2,
+                            y=wb_cw2, group=factor(PID), colour="gray"), legend=FALSE)+
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, lty=1, size=.05, color="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Awareness") + ylab("Wellbeing") +
+  theme_classic() +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Within-Person Association of Interestingness and Wellbeing") +
+    # scale_x_continuous(limits=c(1,5),   #check range of PV
+    #                  breaks = c(1,2,3,4,5)
+    #                  ) +
+    #       scale_y_continuous(limits=c(-3,3),
+    #                  breaks = c(-3, -2, -1, 0, 1, 2, 3)
+    #                  ) +
+  geom_hline(yintercept=0,
+               # color="red",
+               size=1)+
+  xlab("Interestingness \n (higher = more interesting)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+
+# ##effect sizes 
+# #of main effect of interestingness
+model_comparison_fit <- lmer(formula = wb ~
+                     activity+
+                       clarity_all_cw2+
+            attention+
+              valence_all_cw2+
+              reaction_all_cw2+
+               valence_all_cw2:reaction_all_cw2+
+                interesting_all_cw2+
+              # valence_all_cw2:interesting_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+
+round(r.squaredLR(model5_fit)[1] - r.squaredLR(model_comparison_fit)[1],4)
+
+```
+
+#Interesting as mediator
+```{r Without Covariates}
+
+#add interesting in first
+model2_fit <- lmer(formula = wb ~ 
+                     attention+interesting_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model2_fit)
+anova(model2_fit, type=3)
+# confint(model2_fit)
+
+#effect size
+modelcompare_fit <- lmer(formula = wb ~ 
+                     attention+
+                       # interesting_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+round((r.squaredLR(model2_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+#comparing model fit
+# anova(model2_fit, model1_fit)
+
+
+# #plot within-person differences of main effects
+# ##repeat this to ensure direction of effects is as expected
+
+ggplot(data=ESM_inner, aes(x=interesting_all_cw2,
+                            y=wb_cw2, group=factor(PID), colour="gray"), legend=FALSE)+
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, lty=1, size=.05, color="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Objective Valence") + ylab("Wellbeing") +
+  theme_classic() +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Within-Person Association of Interestingness and Wellbeing") +
+    # scale_x_continuous(limits=c(1,5),   #check range of PV
+    #                  breaks = c(1,2,3,4,5)
+    #                  ) +
+    #       scale_y_continuous(limits=c(-3,3),
+    #                  breaks = c(-3, -2, -1, 0, 1, 2, 3)
+    #                  ) +
+  geom_hline(yintercept=0,
+               # color="red",
+               size=1)+
+  xlab("Interesting \n (higher = more interesting)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+##mediation 
+
+#There is a lot of discussion / uncertainty online about how to properly do a mediation MLM. Just say that I use the Tingley, Dustin, et al, 2014, "Mediation" R package; and that this is a "1-1-1" mediation (hence the cw2 for each thing). The output is similar, though not exactly the same, without the cw2. 
+
+# https://cran.r-project.org/web/packages/mediation/vignettes/mediation.pdf
+# https://stats.stackexchange.com/questions/491503/mediation-analysis-for-mixed-models
+# https://stats.stackexchange.com/questions/104692/comprehending-output-from-mediation-analysis-in-r
+# https://towardsdatascience.com/doing-and-reporting-your-first-mediation-analysis-in-r-2fe423b92171
+
+#libraries can mess up results
+library(lme4)
+library(lmerTest)
+
+ESM_inner$attention <- as.factor(ESM_inner$attention)
+
+fit.totaleffect <- lmer(wb_cw2 ~ attention + (1|PID)
+                          , data=ESM_inner)
+summary(fit.totaleffect) #estimate of attention = total effect; IV to DV line
+
+
+fit.mediator<- lmer(interesting_all_cw2 ~ attention + (1|PID) 
+                    , data=ESM_inner)
+summary(fit.mediator) #effect of IV onto mediator; IV to Mediator line
+
+
+fit.dv <- lmer(wb_cw2 ~ attention + interesting_all_cw2 + (1|PID)
+                      , data=ESM_inner)
+summary(fit.dv) #effect of mediator on DV; Mediator to DV line (ignore IV here)
+#since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation 
+
+
+# install.packages("mediation")
+# library("mediation")
+detach("package:lmerTest", unload=TRUE)
+
+# results<-mediation::mediate(fit.mediator, fit.dv, treat='attention',
+                            # mediator='interesting_all_cw2', na.action="na.omit")
+# summary(results)
+
+##NOT UPDATED TEXT:
+  
+#Interpretation - of the estimated 0.38 (Total Effect) increase in wellbeing that appears to be due to attention state, an estimated 0.16 (ACME) of that is actually a result of valence changes generated by attention state, while the remaining 0.23 (ADE) is from attention state itself
+# proportion of the causal effect of attention state that is mediated by valence rather than direct effect is 0.41 (Prop.Mediated)
+
+# The effect of attention state on wellbeing was partially mediated via objective valence. As Figure 1 illustrates, the coefficient between attention state and objective valence, and the coefficient between objective valence and wellbeing, was significant. A 95% confidence interval of the indirect effect was computed by using a quasi-Bayesian approximation using 1000 simulations. The indirect effect was (.25)*(.63) = .16, and the 95% confidence interval ranged from .11 to .21. Thus, the indirect effect was statistically significant (p<.001).
+
+
+
+##graphing - need to manually input each part from above
+
+#these are coefficients, like regression coefficients 
+
+# install.packages("diagram")
+library(diagram)
+
+data <- c(0, "'.13**'", 0,
+          0, 0, 0, 
+          "'.20***'", "'.38***'", 0)
+M<- matrix (nrow=3, ncol=3, byrow = TRUE, data=data)
+plot<- plotmat (M, pos=c(1,2), 
+                name= c( "Interestingness","Attention State", "WellBeing"), 
+                box.type = "rect", box.size = 0.12, box.prop=0.2,  curve=0,
+                arr.width = .08, arr.type = "simple",
+                main = "1-1-1 Multilevel Mediation Analysis")
+
+
+
+```
+
+```{r With covariates}
+
+#add valence in first
+model2a_fit <- lmer(formula = wb ~ 
+                     activity+clarity_all_cw2+
+                     attention+interesting_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model2a_fit)
+anova(model2a_fit, type=3)
+# confint(model2a_fit)
+
+#effect size
+modelcompare_fit <- lmer(formula = wb ~ 
+                     # activity+
+                       clarity_all_cw2+
+                     attention+
+                       interesting_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+round((r.squaredLR(model2a_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+
+
+library(lme4)
+library(lmerTest)
+
+fit.totaleffect1 <- lme4::lmer(wb_cw2 ~ attention + (1|PID)
+                        + activity+ clarity_all_cw2 #covariate
+                          , data=ESM_inner)
+summary(fit.totaleffect1) #estimate of attention = total effect; IV to DV line; .39, p<.001
+Anova(fit.totaleffect1, type=3)
+
+fit.mediator1<- lme4::lmer(interesting_all_cw2 ~ attention + (1|PID) 
+                     +activity+ clarity_all_cw2   #covariate
+                    , data=ESM_inner)
+summary(fit.mediator1) #effect of IV onto mediator; IV to Mediator line; .09, p=.05
+Anova(fit.mediator1, type=3)
+
+fit.dv1 <- lme4::lmer(wb_cw2 ~ attention + interesting_all_cw2 + (1|PID)
+                    + activity+ clarity_all_cw2  #covariate
+                      , data=ESM_inner)
+summary(fit.dv1) #effect of mediator on DV; Mediator to DV line (ignore IV here); .17, p<.001
+#since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation 
+Anova(fit.dv1, type=3) 
+
+
+
+# install.packages("mediation")
+# library("mediation")
+detach("package:lmerTest", unload=TRUE)
+
+# results1<-mediation::mediate(fit.mediator1, fit.dv1, treat='attention',
+#                             mediator='interesting_all_cw2', na.action="na.omit")
+# summary(results1)
+
+
+
+data <- c(0, "'.09'", 0,
+          0, 0, 0, 
+          "'.17***'", "'.39***'", 0)
+M<- matrix (nrow=3, ncol=3, byrow = TRUE, data=data)
+plot<- plotmat (M, pos=c(1,2), 
+                name= c( "Interestingness","Attention State", "WellBeing"), 
+                box.type = "rect", box.size = 0.12, box.prop=0.2,  curve=0,
+                arr.width = .08, arr.type = "simple",
+                main = "1-1-1 Multilevel Mediation Analysis with Covariates")
+
+
+#comparing model fit
+anova(model2a_fit, model2_fit)
+```
+
+
+
+#clarity as mediator
+```{r Without Covariates}
+
+#add clarity in first
+model2_fit <- lmer(formula = wb ~ 
+                     attention+clarity_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model2_fit)
+anova(model2_fit, type=3)
+# confint(model2_fit)
+
+#effect size
+modelcompare_fit <- lmer(formula = wb ~ 
+                     # attention+
+                       clarity_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+round((r.squaredLR(model2_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+#comparing model fit
+# anova(model2_fit, model1_fit)
+
+
+# #plot within-person differences of main effects
+# ##repeat this to ensure direction of effects is as expected
+
+ggplot(data=ESM_inner, aes(x=clarity_all_cw2,
+                            y=wb_cw2, group=factor(PID), colour="gray"), legend=FALSE)+
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, lty=1, size=.05, color="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Objective Valence") + ylab("Wellbeing") +
+  theme_classic() +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Within-Person Association of clarity and Wellbeing") +
+    # scale_x_continuous(limits=c(1,5),   #check range of PV
+    #                  breaks = c(1,2,3,4,5)
+    #                  ) +
+    #       scale_y_continuous(limits=c(-3,3),
+    #                  breaks = c(-3, -2, -1, 0, 1, 2, 3)
+    #                  ) +
+  geom_hline(yintercept=0,
+               # color="red",
+               size=1)+
+  xlab("clarity \n (higher = more clarity)")+
+  ylab("WellBeing \n (higher = greater wb)")
+
+
+##mediation 
+
+#There is a lot of discussion / uncertainty online about how to properly do a mediation MLM. Just say that I use the Tingley, Dustin, et al, 2014, "Mediation" R package; and that this is a "1-1-1" mediation (hence the cw2 for each thing). The output is similar, though not exactly the same, without the cw2. 
+
+# https://cran.r-project.org/web/packages/mediation/vignettes/mediation.pdf
+# https://stats.stackexchange.com/questions/491503/mediation-analysis-for-mixed-models
+# https://stats.stackexchange.com/questions/104692/comprehending-output-from-mediation-analysis-in-r
+# https://towardsdatascience.com/doing-and-reporting-your-first-mediation-analysis-in-r-2fe423b92171
+
+#libraries can mess up results
+library(lme4)
+library(lmerTest)
+
+ESM_inner$attention <- as.factor(ESM_inner$attention)
+
+fit.totaleffect <- lmer(wb_cw2 ~ attention + (1|PID)
+                          , data=ESM_inner)
+summary(fit.totaleffect) #estimate of attention = total effect; IV to DV line
+
+
+fit.mediator<- lmer(clarity_all_cw2 ~ attention + (1|PID) 
+                    , data=ESM_inner)
+summary(fit.mediator) #effect of IV onto mediator; IV to Mediator line
+
+
+fit.dv <- lmer(wb_cw2 ~ attention + clarity_all_cw2 + (1|PID)
+                      , data=ESM_inner)
+summary(fit.dv) #effect of mediator on DV; Mediator to DV line (ignore IV here)
+#since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation 
+
+
+# install.packages("mediation")
+# library("mediation")
+detach("package:lmerTest", unload=TRUE)
+
+# results2<-mediation::mediate(fit.mediator, fit.dv, treat='attention',
+#                             mediator='clarity_all_cw2', na.action="na.omit")
+# summary(results2)
+
+##NOT UPDATED TEXT:
+  
+#Interpretation - of the estimated 0.38 (Total Effect) increase in wellbeing that appears to be due to attention state, an estimated 0.16 (ACME) of that is actually a result of valence changes generated by attention state, while the remaining 0.23 (ADE) is from attention state itself
+# proportion of the causal effect of attention state that is mediated by valence rather than direct effect is 0.41 (Prop.Mediated)
+
+# The effect of attention state on wellbeing was partially mediated via objective valence. As Figure 1 illustrates, the coefficient between attention state and objective valence, and the coefficient between objective valence and wellbeing, was significant. A 95% confidence interval of the indirect effect was computed by using a quasi-Bayesian approximation using 1000 simulations. The indirect effect was (.25)*(.63) = .16, and the 95% confidence interval ranged from .11 to .21. Thus, the indirect effect was statistically significant (p<.001).
+
+
+
+##graphing - need to manually input each part from above
+
+#these are coefficients, like regression coefficients 
+
+# install.packages("diagram")
+# library(diagram)
+# 
+# data <- c(0, "'.13**'", 0,
+#           0, 0, 0, 
+#           "'.20***'", "'.38***'", 0)
+# M<- matrix (nrow=3, ncol=3, byrow = TRUE, data=data)
+# plot<- plotmat (M, pos=c(1,2), 
+#                 name= c( "clarityness","Attention State", "WellBeing"), 
+#                 box.type = "rect", box.size = 0.12, box.prop=0.2,  curve=0,
+#                 arr.width = .08, arr.type = "simple",
+#                 main = "1-1-1 Multilevel Mediation Analysis")
+
+
+
+```
+
+```{r With covariates}
+
+#add valence in first
+model2a_fit <- lmer(formula = wb ~ 
+                     activity+clarity_all_cw2+
+                     attention+clarity_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model2a_fit)
+anova(model2a_fit, type=3)
+# confint(model2a_fit)
+
+#effect size
+modelcompare_fit <- lmer(formula = wb ~ 
+                     # activity+
+                       clarity_all_cw2+
+                     attention+
+                       clarity_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+round((r.squaredLR(model2a_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),4)
+
+
+
+library(lme4)
+library(lmerTest)
+
+fit.totaleffect1 <- lme4::lmer(wb_cw2 ~ attention + (1|PID)
+                        + activity+ clarity_all_cw2 #covariate
+                          , data=ESM_inner)
+summary(fit.totaleffect1) #estimate of attention = total effect; IV to DV line; .39, p<.001
+Anova(fit.totaleffect1, type=3)
+
+fit.mediator1<- lme4::lmer(clarity_all_cw2 ~ attention + (1|PID) 
+                     +activity+ clarity_all_cw2   #covariate
+                    , data=ESM_inner)
+summary(fit.mediator1) #effect of IV onto mediator; IV to Mediator line; .09, p=.05
+Anova(fit.mediator1, type=3)
+
+fit.dv1 <- lme4::lmer(wb_cw2 ~ attention + clarity_all_cw2 + (1|PID)
+                    + activity+ clarity_all_cw2  #covariate
+                      , data=ESM_inner)
+summary(fit.dv1) #effect of mediator on DV; Mediator to DV line (ignore IV here); .17, p<.001
+#since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation 
+Anova(fit.dv1, type=3) 
+
+
+
+# install.packages("mediation")
+# library("mediation")
+detach("package:lmerTest", unload=TRUE)
+
+results1<-mediation::mediate(fit.mediator1, fit.dv1, treat='attention',
+                            mediator='clarity_all_cw2', na.action="na.omit")
+summary(results1)
+
+
+
+data <- c(0, "'.09'", 0,
+          0, 0, 0, 
+          "'.17***'", "'.39***'", 0)
+M<- matrix (nrow=3, ncol=3, byrow = TRUE, data=data)
+plot<- plotmat (M, pos=c(1,2), 
+                name= c( "clarityness","Attention State", "WellBeing"), 
+                box.type = "rect", box.size = 0.12, box.prop=0.2,  curve=0,
+                arr.width = .08, arr.type = "simple",
+                main = "1-1-1 Multilevel Mediation Analysis with Covariates")
+
+
+#comparing model fit
+anova(model2a_fit, model2_fit)
+```
+
+
+
+
+#Others
+```{r Activity by Attention State}
+table <- table(ESM$activity, ESM$attention)
+table
+chisq.test(table, 
+           simulate.p.value = F)
+
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=F)
+
+
+table1::label(ESM$activity) <- "Activity"
+table1::label(ESM$attention) <- "Attention State"
+
+table1::table1(~activity | attention
+               , data = ESM) 
+
+
+###NOTE I do these backwards since i already use activity as a covariate early on...
+
+#attention state model
+model1ACT_fit <- lmer(formula = wb ~
+                     # activity+ 
+                attention+
+                  # interesting_all_cw2+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F)
+anova(model1ACT_fit, type=3)
+anova(model1_fit, model1ACT_fit)
+
+#valence mediation model
+model2aACT_fit <- lmer(formula = wb ~
+                      # activity+
+                clarity_all_cw2+
+            attention+
+              valence_all_cw2+
+               # interesting_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+anova(model2aACT_fit, type=3)
+anova(model2a_fit, model2aACT_fit)
+
+#valence*reaction model
+model3ACT_fit <- lmer(formula = wb ~
+                     # activity+
+                clarity_all_cw2+
+            attention+
+              valence_all_cw2*reaction_all_cw2+
+                 # interesting_all_cw2+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F)
+anova(model3ACT_fit, type=3)
+anova(model3_fit, model3ACT_fit)
+
+
+```
+
+
+```{r Valence to Reactivity with Attention State as Moderator}
+# -valence —> Reactivity, with attention state as a moderator 
+
+#alreadydo this way above
+# #had trouble plotting as is, so need to dummy code attention first
+# ESM_inner_test <- ESM_inner
+# ESM_inner_test$attention <- ifelse(ESM_inner_test$attention == 'Present', 1, 0)
+# #present = 1
+
+
+##without covariates
+model6_fit <- lmer(formula = reaction_all ~
+                     # activity+clarity_all_cw2+
+              valence_all_cw2*attention+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F, na.action = "na.omit")
+summary(model6_fit)
+anova(model6_fit, type=3)
+
+#plot
+mod<-probe_interaction(model6_fit, 
+                  pred = valence_all_cw2,
+                  modx = attention,
+                  alpha = .05)
+mod$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Valence*Attention on Reaction \n (1 = Present, 0 = Not Present)") +
+    # scale_x_continuous(limits=c(-3,3),
+    #                  ) +
+          scale_y_continuous(limits=c(1,7)
+                     ) +
+  xlab("Valence (person mean centered) \n (higher = more positive)")+
+  ylab("Reactivity \n (higher = more Reactive)")
+
+
+
+
+# ##effect sizes 
+# #of interaction
+model_comparison_fit <- lmer(formula = reaction_all ~
+               valence_all_cw2+
+               attention+
+              # valence_all_cw2:attention+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F, na.action = "na.omit")
+
+round(r.squaredLR(model6_fit)[1] - r.squaredLR(model_comparison_fit)[1],4)
+
+
+
+###
+
+ESM_inner_1 <- ESM_inner %>%
+  mutate(attention = as.factor(attention))
+
+ESM_inner_1$attention <- factor(ESM_inner_1$attention, ordered=F)
+  
+##with covariates
+model6a_fit <- lme4::lmer(formula = reaction_all ~
+                     activity+clarity_all_cw2+
+              valence_all_cw2*attention+
+                 (1|PID),
+                    data=ESM_inner_1,
+                   REML = F, na.action = "na.omit")
+summary(model6a_fit)
+Anova(model6a_fit, type=3)
+
+#plot
+mod<-probe_interaction(model6a_fit, #use w final model
+                  pred = valence_all_cw2,
+                  modx = attention, center=T,
+                  interval = TRUE #95% CI is default
+                  # modx.values = "plus-minus" #gets rid of mean 
+                  # alpha = .05
+                  )
+
+mod$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+   # ggtitle("Valence*Attention on Reaction \n (1 = Present, 0 = Not Present)") +
+    # scale_x_continuous(limits=c(-3,3),
+    #                  ) +
+          scale_y_continuous(limits=c(-2,2)
+                     ) +
+  xlab("Thought Valence")+
+  ylab("Reactivity")+
+  guides(fill = guide_legend(title = "Attention State", 
+                             override.aes = list(color = NA)
+                             )) 
+
+
+
+interact_plot(model6a_fit, pred = valence_all_cw2,
+              modx = attention,modx.values = c(-1,1))
+
+
+interact_plot(model6a_fit, pred = valence_all_cw2, modx = attention)
+# 
+interactions::sim_slopes(model6a_fit, pred = valence_all_cw2, modx = attention, jnplot = TRUE
+           )
+
+
+reghelper::simple_slopes(model6a_fit)
+
+
+
+# 
+# probe_interaction(model6a_fit, pred = valence_all_cw2, modx = attention)
+# 
+# cat_plot(model6a_fit, pred = valence_all_cw2, modx = attention)
+# 
+# install.packages("reghelper")
+# library(reghelper)
+# sig_regions(model = model6a_fit)
+
+
+install.packages("SIMPLE.REGRESSION")
+library(SIMPLE.REGRESSION)
+REGIONS_OF_SIGNIFICANCE(model = model6a_fit)
+
+
+
+# ##effect sizes 
+# #of interaction
+model_comparison_fit <- lmer(formula = reaction_all ~
+                     activity+
+                       clarity_all_cw2+
+              valence_all_cw2+
+                attention+
+              # valence_all_cw2:attention+
+                 (1|PID),
+                    data=ESM_inner,
+                   REML = F, na.action = "na.omit")
+
+round(r.squaredLR(model6a_fit)[1] - r.squaredLR(model_comparison_fit)[1],4)
+
+
+tab_model(model6a_fit)
+
+
+
+
+###model comparison
+anova(model6_fit, model6a_fit)
+
+```
+
+```{r OLS Regressions}
+
+#make attention a numeric thing
+ESM_inner_test <- ESM_inner
+ESM_inner_test$attention <- as.numeric(ESM_inner_test$attention)
+
+ESM_inner_test <- ESM_inner_test %>% group_by(PID) %>% 
+  mutate(
+    attention_mean2 = mean(attention, na.rm = T)
+  ) %>% ungroup() %>% 
+  mutate(
+    #these are grand mean centered variables
+    attention_c2 = scale(attention, center = T, scale = F),
+    #these are within-person centered variables
+         attention_cw2 = attention-attention_mean2,
+    #these are between-person centered variables 
+         attention_cb2 = attention_c2-attention_cw2)
+
+
+lmodel <- lm(wb_cw2 ~ activity, data = ESM_inner_test)
+lmodel$coefficients
+summary(lmodel)
+
+
+#testing
+lmodel <- lm(wb_cw2 ~ attention, data = ESM_inner_test)
+lmodel$coefficients
+summary(lmodel)
+
+#scaling like this doesn't make a differece
+# ESM_inner_test$wb_cw2 <- ESM_inner_test$wb_cw2*100
+
+#making it a repeated regression doesn't help
+test<-aov(data=ESM_inner_test,
+          wb_cw2~
+            attention+
+            Error(PID/(attention)))
+summary(test)
+summary(lm(test))
+
+#making it a MLM doesn't help
+model00_fit <- lmer(formula =
+                      wb_cw2 ~ attention+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) 
+summary(model00_fit)
+anova(model00_fit, type=3)
+round(r.squaredLR(model00_fit)[1],4)
+
+
+lmodel <- lm(wb_cw2 ~ attention_cw2, data = ESM_inner_test)
+lmodel$coefficients
+summary(lmodel)
+
+
+lmodel <- lm(wb_cw2 ~ attention, data = ESM_inner_test)
+lmodel$coefficients
+summary(lmodel)
+
+
+## clarity is similar to attention; putting it as cw2 doesn't impact R2 much
+# lmodel <- lm(wb_cw2 ~ clarity, data = ESM_inner)
+# lmodel$coefficients
+# summary(lmodel)
+
+
+lmodel <- lm(wb_cw2 ~ attention+activity, data = ESM_inner)
+lmodel$coefficients
+summary(lmodel)
+
+
+# simple regression - 
+lmodel <- lm(wb_cw2 ~ attention, data = ESM_inner)
+lmodel$coefficients
+summary(lmodel)
+emmeans(lmodel, list(pairwise ~ Attention), adjust = "tukey")
+
+lmodel <- lm(wb_cw2 ~ activity, data = ESM_inner)
+lmodel$coefficients
+summary(lmodel)
+emmeans(lmodel, list(pairwise ~ activity), adjust = "tukey")
+
+
+
+lmodel <- lm(wb_cb2 ~ attention, data = ESM_inner)
+lmodel$coefficients
+summary(lmodel)
+emmeans(lmodel, list(pairwise ~ Attention), adjust = "tukey")
+
+```
+
+
+```{r Attention Moderators on Wellbeing}
+#done by playing around over and over with attention*XX
+#just checking trait moderators on attention 
+
+# ESM$ffmq_all,
+# ESM$ffmq_no_observe,
+# ESM$awareness,
+# ESM$describe,
+# ESM$observing,
+# ESM$nonjudging,
+# ESM$nonreactivity,
+
+# ESM$openness,
+# ESM$conscientiousness,
+# ESM$extraversion,
+# ESM$agreeableness,
+# ESM$neuroticism,
+
+# ESM$age
+# ESM$ethnoracial
+# ESM$sex_at_birth
+# ESM$sexual_orientation_2
+# ESM$ses_ladder
+
+
+
+model1a1_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+interesting_all_cw2+ #as a covariate
+                attention*age+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1a1_fit)
+anova(model1a1_fit, type=3)
+confint(model1a1_fit)
+
+tab_model(model1a1_fit)
+
+#effect size 
+#change # for each variable
+modelcompare_fit <- lmer(formula = wb ~
+                     activity+
+                       clarity_all_cw2+
+                       interesting_all_cw2+
+                attention+
+                  age+
+                  # attention:age+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F)
+round((r.squaredLR(model1a1_fit)[1]) - (r.squaredLR(modelcompare_fit)[1]),3)
+??r.squaredLR
+
+#plot
+mod<-probe_interaction(model1a1_fit, #use w final model
+                  pred = age,
+                  modx = attention,
+                  alpha = .05)
+mod$interactplot +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Attention*Age") +
+    scale_x_continuous(limits=c(18,45),
+                     # breaks = c(-3, -2, -1, 0, 1,2,3)
+                     ) +
+          scale_y_continuous(limits=c(-3,3)
+          #            breaks = c(-3, -2, -1, 0, 1, 2, 3)
+                     ) +
+  xlab("Age")+
+  ylab("Mood \n (higher = greater wb)")
+
+#plot to show outliers 
+
+ESM_inner_fix<-ESM_inner %>%
+  rename(`Attention State` = attention)
+
+range(ESM_inner$wb)
+
+ESM_inner_fix$`Attention State` <- ifelse(
+  ESM_inner_fix$`Attention State` == -1, "Mind Wandering", 
+   ifelse(
+     ESM_inner_fix$`Attention State` == 1, "Present", 
+                                                 ESM_inner_fix$`Attention State`))
+
+ggplot(data=ESM_inner_fix,
+       aes(x=age,y=wb, fill=`Attention State`, color=`Attention State`)) +
+  geom_jitter(size=.5, alpha=0.5, width = .1)+
+  stat_smooth(method="lm", fullrange=TRUE) +
+    geom_hline(yintercept = 0)+
+  xlab("Age") + ylab("Mood") +
+ theme_minimal()+
+  theme(legend.position = 'right')+
+  theme(plot.title = element_text(face = "bold", hjust = 6, size=24))+
+  theme(axis.title.x = element_text(size=24))+
+  theme(axis.title.y = element_text(size=24))+
+  theme(axis.text.x = element_text(size=24))+
+  theme(axis.text.y = element_text(size=24))+
+  theme(legend.text = element_text(size=24))+
+  theme(legend.title = element_text(size=24))+
+  theme(panel.border = element_rect("black",  fill=NA))+
+  theme(plot.title = element_text(face = "bold"))+
+  theme(plot.title = element_text(hjust = 0))
+
+
+
+tab_model(model1a1_fit)
+
+#include valence as a covariate
+model1a1_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+valence_all_cw2+ #as a covariate
+               # +interesting_all_cw2+
+                        attention*age+
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1a1_fit)
+anova(model1a1_fit, type=3)
+
+
+modelcompare_fit <- lmer(formula = wb ~
+                     activity+
+                       clarity_all_cw2+
+                       valence_all_cw2+
+                attention+age+
+                  # attention:age
+                 (1|PID), 
+                    data=ESM_inner,
+                   REML = F)
+(r.squaredLR(model1a1_fit)[1]) - (r.squaredLR(modelcompare_fit)[1])
+
+
+
+
+
+
+### % of inner speech by attention
+
+ESM_inner1 <- ESM %>%
+  group_by(PID) %>%
+  mutate(inner_speech = length(inner_speech[inner_speech=="Inner Speech"])) %>%
+ mutate(no_inner_speech = length(inner_speech[inner_speech!="Inner Speech"])) %>%
+    mutate(percent_inner = 
+             (inner_speech/(inner_speech+no_inner_speech))*100)
+
+ESM_inner1$inner_speech
+ESM_inner1$no_inner_speech
+ESM_inner1$percent_inner
+
+
+model1a1_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+ #as a covariate
+                attention*percent_inner+
+                 (1|PID), 
+                    data=ESM_inner1,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1a1_fit)
+anova(model1a1_fit, type=3)
+# confint(model1a1_fit)
+
+
+cor.test(ESM_inner1$percent_inner, ESM_inner1$ffmq_all)
+
+
+
+```
+
+
+```{r Random Slopes}
+#fixed slope suggests everyone in data is following a similar pattern, ex. increasing over time or decreasing over time
+#random slope allows people to vary in how they progress over time; people may have certain traits that allow them to progress at variable rates or directions
+#goal here is to know if your repeated measure if best represented as a fixed or a random slope; do this by comparing both types of models (fixed slope vs random slope) to the unconditional means model 
+
+
+# model with random intercept and random slope
+# note that m1 has the same outcome whether you include the "1+" or not in the ()
+m1<- lmer(wb~ attention + (1+attention | PID), ESM_inner, REML=F)
+
+#model with random intercept and fixed slope
+m2<- lmer(wb~ attention + (1 | PID), ESM_inner, REML=F)
+
+#model with fixed intercept and random slope
+m3<- lmer(wb~ attention + (0 + attention | PID), ESM_inner, REML=F)
+
+anova(m1,m2,m3)
+
+## assuming these are all the same (m1), you can put this into a model together with something like this for the random effect:
+# (aware_cw2 + observe_cw2 + describe_cw2 + nonjudge_cw2 + nonreact_cw2 | PID)
+# for the above test if doing the 1 + at the beginning (just once, not for each variable) makes a differnece? I don't think it should 
+# I think 'simplifying' the model would look like (aware_cw2 | PID) + (observe_cw2 | PID) 
+
+
+
+model1a1_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+ #as a covariate
+                attention+ 
+                  (attention|PID)+(1|PID),
+                    data=ESM_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1a1_fit)
+anova(model1a1_fit, type=3)
+# confint(model1a1_fit)
+
+
+
+anova(model1a1_fit, model1a_fit)
+
+
+```
+
+
+
+##Descriptive Frequencies
+```{r Frequencies}
+ESM_inner$attention
+# Step 2: Group the data by 'Person' and calculate the count of 'Not Present' and total counts per person.
+prop_wander <- ESM %>%  #note this is overall
+  group_by(PID) %>%
+  summarise(
+    not_present_count = sum(attention == -1),
+    total_count = n(), 
+    Age = first(age), 
+    FFMQ = first(ffmq_all)
+  )
+# Step 3: Calculate the proportion and percentage of 'Not Present' per person.
+prop_wander <- prop_wander %>%
+  mutate(prop_wander = not_present_count / total_count * 100)
+prop_wander
+
+cor.test(prop_wander$Age, prop_wander$prop_wander)
+cor.test(prop_wander$FFMQ, prop_wander$prop_wander)
+
+
+# Step 2: Calculate the correlation coefficient between 'Age' and 'prop_wander'
+correlation_result <- cor.test(prop_wander$Age, prop_wander$prop_wander)
+
+# Step 3: Create the correlation plot with the callout
+ggscatter(prop_wander, x = "Age", y = "prop_wander", 
+          add = "reg.line", cor.coef = TRUE, 
+          cor.method = "pearson",
+          title = "Correlation between Age and prop_wander",
+          xlab = "Age", ylab = "Percentage of Not Present prompts",
+          conf.int = TRUE)
+
+
+
+filtered_prop_wander <- prop_wander[prop_wander$FFMQ > 0, ]
+# Step 2: Calculate the correlation coefficient between 'Age' and 'prop_wander'
+correlation_result <- cor.test(filtered_prop_wander$FFMQ, filtered_prop_wander$prop_wander)
+
+# Step 3: Create the correlation plot with the callout
+ggscatter(filtered_prop_wander, x = "FFMQ", y = "prop_wander", 
+          add = "reg.line", cor.coef = TRUE, 
+          cor.method = "pearson",
+          title = "Correlation between Trait Mindfulness and prop_wander",
+          xlab = "Trait FFMQ", ylab = "Percentage of Not Present prompts",
+          conf.int = TRUE)
+
+
+
+#try zooming in 
+filtered_prop_wander <- prop_wander[prop_wander$Age < 26, ]
+# Step 3: Calculate the correlation coefficient between 'Age' and 'prop_wander'
+correlation_result <- cor.test(filtered_prop_wander$Age, filtered_prop_wander$prop_wander)
+# Step 4: Create the correlation plot with the callout
+ggscatter(filtered_prop_wander, x = "Age", y = "prop_wander", 
+          add = "reg.line", cor.coef = TRUE, 
+          cor.method = "pearson",
+          title = "Correlation between Age and prop_wander (Ages < 26)",
+          xlab = "Age", ylab = "Percentage of Not Present prompts",
+          conf.int = TRUE) 
+
+##A lot of this was already analyzed above, but at least it's all in one place here
+
+
+
+## try as bar chart
+# Step 2: Convert 'Age' to a categorical variable
+prop_wander <- prop_wander %>%
+  mutate(Age_Category = as.character(Age))
+
+# Step 3: Calculate means and standard errors for each age category
+means_se <- prop_wander %>%
+  group_by(Age_Category) %>%
+  summarise(
+    mean_prop_wander = mean(prop_wander),
+    se_prop_wander = sd(prop_wander) / sqrt(n())
+  )
+
+# Step 4: Create the bar chart
+ggplot(means_se, aes(x = Age_Category, y = mean_prop_wander, fill = Age_Category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(aes(ymin = mean_prop_wander - se_prop_wander,
+                    ymax = mean_prop_wander + se_prop_wander),
+                width = 0.25, position = position_dodge(0.9)) +
+  labs(x = "Age", y = "Mean prop_wander", title = "Mean prop_wander by Age") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "none")  # Remove the legend
+
+
+
+
+
+
+
+
+##frequencies:
+
+#Attention state
+group_by(ESM, attention) %>%
+ dplyr::summarise(n = length(attention),
+                  `%` = (n/nrow(ESM)*100)) %>%
+    arrange(desc(n))
+
+# table1::label(ESM$attention) <- "Attention State"
+# table1::table1(~attention, data = ESM, digits=3)
+
+#Inner speech vs not
+group_by(ESM, inner_speech) %>%
+ dplyr::summarise(n = length(inner_speech),
+                  `%` = (n/nrow(ESM)*100)) %>%
+    arrange(desc(n))
+
+
+#Type of inner speech 
+group_by(ESM_no_inner, inner_experience) %>%
+ dplyr::summarise(n = length(inner_experience),
+                  `%` = (n/nrow(ESM)*100)) %>% 
+  arrange(desc(n))
+
+#Clarity 
+hist(ESM$clarity_all)
+
+group_by(ESM, clarity_all) %>%
+ dplyr::summarise(n = length(clarity_all),
+                  `%` = (n/nrow(ESM)*100)) %>% 
+  arrange(desc(n))
+
+
+#Interestingness
+hist(ESM$interesting_all)
+
+group_by(ESM, interesting_all) %>%
+ dplyr::summarise(n = length(interesting_all),
+                  `%` = (n/nrow(ESM)*100)) %>% 
+  arrange(desc(n))
+
+#Activities
+group_by(ESM, activity) %>%
+ dplyr::summarise(n = length(activity), 
+                `%` = (n/nrow(ESM)*100)) %>%
+  arrange(desc(n))
+```
+
+```{r Tests}
+##Tests:
+
+
+#attention state by inner experience
+table1::label(ESM$inner_experience) <- "Inner Experience"
+table1::label(ESM$attention) <- "Attention State"
+
+table1::table1(~inner_experience | attention , data = ESM, digits=3)
+
+#missing here = inner speech ; do ESM_no_inner to omit that 
+
+
+
+#wb by Inner speech vs no inner speech 
+table1::label(ESM$inner_speech) <- "Inner Speech"
+table1::label(ESM$wb) <- "Wellbeing"
+
+table1::table1(~wb | inner_speech , data = ESM, digits=3)
+
+round(anova(lm(
+  wb~inner_speech,
+  data=ESM)),2)
+
+TukeyHSD(aov(lm(
+  wb~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+
+ggplot(ESM,
+       aes(x=inner_speech,y=wb,fill=inner_speech))+
+  stat_summary(fun.y="mean", geom="bar", position=position_dodge(),
+               # aes(width=.25)
+               )+
+  stat_summary(geom="errorbar", position=position_dodge(), color='black',
+               # aes(width=.25)
+               )+
+  theme_minimal()+
+  ylab('Wellbeing')+
+  ylim(-3,3)+
+  xlab('Inner Speech')+
+  theme(legend.position = 'none')+
+  geom_hline(yintercept=0, linetype="solid",
+             color = "black", size=1)+
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  theme(axis.text.x = element_text(size=14))+
+  theme(axis.text.y = element_text(size=14))+
+  theme(panel.border = element_rect("black",  fill=NA))+
+  theme(plot.title = element_text(face = "bold"))+
+  theme(plot.title = element_text(hjust = 0))
+
+
+#wb by type of inner speech 
+table1::label(ESM_no_inner$inner_experience) <- "Inner Experience"
+table1::label(ESM_no_inner$wb) <- "Wellbeing"
+
+table1::table1(~wb | inner_experience , data = ESM_no_inner, digits=3)
+
+round(anova(lm(
+  wb~inner_experience,
+  data=ESM_no_inner)),2)
+
+TukeyHSD(aov(lm(
+  wb~inner_experience,
+  data=ESM_no_inner)),
+  which="inner_experience")
+
+ggplot(ESM_no_inner,
+       aes(x=inner_experience,y=wb,fill=inner_experience))+
+  stat_summary(fun.y="mean", geom="bar", position=position_dodge(),
+               # aes(width=.25)
+               )+
+  stat_summary(geom="errorbar", position=position_dodge(), color='black',
+               # aes(width=.25)
+               )+
+  theme_minimal()+
+  ylab('Wellbeing')+
+  ylim(-3,3)+
+  xlab('Inner Experience')+
+  theme(legend.position = 'none')+
+  geom_hline(yintercept=0, linetype="solid",
+             color = "black", size=1)+
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size=14))+
+  theme(axis.title.x = element_text(size=14))+
+  theme(axis.title.y = element_text(size=14))+
+  theme(axis.text.x = element_text(size=14))+
+  theme(axis.text.y = element_text(size=14))+
+  theme(panel.border = element_rect("black",  fill=NA))+
+  theme(plot.title = element_text(face = "bold"))+
+  theme(plot.title = element_text(hjust = 0))
+
+
+
+
+#gender by Inner speech vs no inner speech 
+table1::label(ESM$inner_speech) <- "Inner Speech"
+table1::label(ESM$sex_at_birth) <- "Sex at Birth"
+
+table1::table1(~inner_speech | gender , data = ESM, digits=3)
+
+group_by(ESM, gender) %>%
+ dplyr::summarise(n = length(gender),
+                  `%` = (n/nrow(ESM)*100)) %>% 
+  arrange(desc(n))
+
+table <- table(ESM$gender, ESM$inner_speech)
+table
+chisq.test(table, simulate.p.value = T)
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=T)
+
+
+
+
+
+#gender by type of inner speech 
+table1::label(ESM_no_inner$inner_experience) <- "Inner Experience"
+table1::label(ESM_no_inner$sex_at_birth) <- "Sex at Birth"
+
+table1::table1(~inner_experience | gender , data = ESM_no_inner, digits=3)
+
+table <- table(ESM_no_inner$gender, ESM_no_inner$inner_experience)
+table
+chisq.test(table, simulate.p.value = T)
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=T)
+
+
+#gender by activity 
+table1::label(ESM$activity) <- "Activity"
+table1::label(ESM$sex_at_birth) <- "Sex at Birth"
+
+table1::table1(~activity | gender , data = ESM, digits=3)
+
+table <- table(ESM$gender, ESM$activity)
+table
+chisq.test(table, simulate.p.value = T)
+chisq.posthoc.test::chisq.posthoc.test(table,
+                   method = "bonferroni",
+                   round = 3,
+                   simulate.p.value=T)
+
+
+#FFMQ by Inner speech vs no inner speech 
+#NOTE - this is off because it's just repeating ffmq as a trait score versus a state score
+table1::label(ESM$ffmq_all) <- "FFMQ Total"
+table1::label(ESM$inner_speech) <- "Inner Speech"
+
+table1::table1(~ffmq_all | inner_speech , data = ESM, digits=3)
+
+# round(anova(lm(
+#   ffmq_all~inner_speech,
+#   data=ESM)),2)
+
+
+#FFMQ by type of inner speech 
+table1::label(ESM$ffmq_all) <- "FFMQ Total"
+table1::label(ESM$inner_experience) <- "Inner Experience"
+
+table1::table1(~ffmq_all | inner_experience , data = ESM, digits=3)
+
+
+#FFMQ by activity 
+table1::label(ESM$ffmq_all) <- "FFMQ Total"
+table1::label(ESM$activity) <- "Activity"
+
+table1::table1(~ffmq_all | activity , data = ESM, digits=3)
+
+#personality by Inner speech vs no inner speech 
+
+#personality by type of inner speech 
+
+#personality by activity 
+
+
+```
+
+
+
+
+
+```{r Extra correlations / relationships}
+
+#ffmq_all
+round(anova(lm(
+  ffmq_all~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  ffmq_all~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=ffmq_all,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#ffmq_no_observe
+round(anova(lm(
+  ffmq_no_observe~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  ffmq_no_observe~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=ffmq_no_observe,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#awareness
+round(anova(lm(
+  awareness~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  awareness~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=awareness,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#describe
+round(anova(lm(
+  describe~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  describe~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=describe,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#observing
+round(anova(lm(
+  observing~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  observing~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=observing,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#nonjudging
+round(anova(lm(
+  nonjudging~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  nonjudging~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=nonjudging,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#nonreactivity
+round(anova(lm(
+  nonreactivity~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  nonreactivity~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=nonreactivity,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#openness
+round(anova(lm(
+  openness~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  openness~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=openness,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#conscientiousness 
+round(anova(lm(
+  conscientiousness~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  conscientiousness~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=consientiousness,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#extraversion
+round(anova(lm(
+  extraversion~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  extraversion~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=extraversion,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#agreeableness
+round(anova(lm(
+  agreeableness~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  agreeableness~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=agreeableness,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#neuroticism
+round(anova(lm(
+  neuroticism~attention,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  neuroticism~attention,
+  data=ESM)),
+  which="attention")
+ggplot(ESM,
+       aes(x=attention,
+           y=neuroticism,
+           fill=attention))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+
+
+
+
+
+#
+#ffmq_all
+round(anova(lm(
+  ffmq_all~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  ffmq_all~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=ffmq_all,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#ffmq_no_observe
+round(anova(lm(
+  ffmq_no_observe~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  ffmq_no_observe~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=ffmq_no_observe,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#awareness
+round(anova(lm(
+  awareness~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  awareness~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=awareness,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#describe
+round(anova(lm(
+  describe~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  describe~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=describe,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#observing
+round(anova(lm(
+  observing~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  observing~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=observing,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#nonjudging
+round(anova(lm(
+  nonjudging~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  nonjudging~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=nonjudging,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#nonreactivity
+round(anova(lm(
+  nonreactivity~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  nonreactivity~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=nonreactivity,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#openness
+round(anova(lm(
+  openness~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  openness~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=openness,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#conscientiousness 
+round(anova(lm(
+  conscientiousness~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  conscientiousness~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=consientiousness,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#extraversion
+round(anova(lm(
+  extraversion~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  extraversion~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=extraversion,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#agreeableness
+round(anova(lm(
+  agreeableness~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  agreeableness~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=agreeableness,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#neuroticism
+round(anova(lm(
+  neuroticism~inner_speech,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  neuroticism~inner_speech,
+  data=ESM)),
+  which="inner_speech")
+ggplot(ESM,
+       aes(x=inner_speech,
+           y=neuroticism,
+           fill=inner_speech))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+
+
+
+
+
+
+
+#
+#ffmq_all
+round(anova(lm(
+  ffmq_all~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  ffmq_all~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=ffmq_all,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#ffmq_no_observe
+round(anova(lm(
+  ffmq_no_observe~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  ffmq_no_observe~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=ffmq_no_observe,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#awareness
+round(anova(lm(
+  awareness~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  awareness~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=awareness,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#describe
+round(anova(lm(
+  describe~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  describe~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=describe,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#observing
+round(anova(lm(
+  observing~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  observing~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=observing,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#nonjudging
+round(anova(lm(
+  nonjudging~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  nonjudging~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=nonjudging,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#nonreactivity
+round(anova(lm(
+  nonreactivity~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  nonreactivity~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=nonreactivity,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#openness
+round(anova(lm(
+  openness~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  openness~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=openness,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#conscientiousness 
+round(anova(lm(
+  conscientiousness~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  conscientiousness~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=consientiousness,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#extraversion
+round(anova(lm(
+  extraversion~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  extraversion~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=extraversion,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#agreeableness
+round(anova(lm(
+  agreeableness~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  agreeableness~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=agreeableness,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+#neuroticism
+round(anova(lm(
+  neuroticism~activity,
+  data=ESM)),2)
+TukeyHSD(aov(lm(
+  neuroticism~activity,
+  data=ESM)),
+  which="activity")
+ggplot(ESM,
+       aes(x=activity,
+           y=neuroticism,
+           fill=activity))+stat_summary(fun.y="mean", geom="bar", position=position_dodge(),)+stat_summary(geom="errorbar", position=position_dodge(), color='black')+theme_minimal()
+```
+
+```{r No inner speech}
+#just copy paste the confirmatory analyses here and replace with no inner speech dataframe
+
+model0_fit <- lmer(formula = wb ~ 1 + (1|PID), 
+              data=ESM_no_inner)
+summary(model0_fit)
+
+VarCorr(model0_fit)
+RandomEffects <- as.data.frame(VarCorr(model0_fit))
+RandomEffects
+ICC_between <- RandomEffects[1,4]/(RandomEffects[1,4]+RandomEffects[2,4]) 
+round(ICC_between*100,2)
+# of the total variance in DV, XX% is attributable to between-person variation 
+# Any value below 5% here suggests clustering is not taking place and MLM should not take place
+
+round((100-(ICC_between*100)),2)
+# whereas XX% is attributatable to within-person variation.
+
+
+
+##attention model
+model1a_fit <- lmer(formula = wb ~
+                     activity+clarity_all_cw2+ #as a covariate
+                attention+
+                 (1|PID), 
+                    data=ESM_no_inner,
+                   REML = F) #must set this to F to return loglik and AIC
+summary(model1a_fit)
+anova(model1a_fit, type=3)
+confint(model1a_fit)
+
+#effect size 
+#change # for each variable
+modelcompare_fit <- lmer(formula = wb ~
+                     activity+
+                       clarity_all_cw2+
+                # attention+
+                 (1|PID), 
+                    data=ESM_no_inner,
+                   REML = F)
+(r.squaredLR(model1a_fit)[1]) - (r.squaredLR(modelcompare_fit)[1])
+
+
+
+
+
+
+
+```
+
+
+
+```{r Stricter Inclusion}
+# CondA  - episode 2
+#make sure no blanks either like just a space bar 
+CondA$`ep2#1_1_1.x`
+CondA$`ep2#1_1_1.y`
+
+
+CondA <- 
+  CondA %>% drop_na(`ep2#1_1_1.x`, `ep2#1_1_1.y`) 
+
+
+```
+
+
+
+
+
+```{r Extra Probably Unneccesary code}
+
+###plot between-person differences 
+ggplot(data=CondA_long, aes(x=extraversion, 
+                            y=wb_cb2, #note I changed overall wb to between-person for these. I think unless it's used                                          as a DV in a MLM, you need to specify it here 
+                            group=factor(PID)), legend=FALSE) +
+  geom_point(colour="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Extraversion") + ylab("WellBeing") +
+  theme_classic() +
+  theme(axis.title=element_text(size=16),
+        axis.text=element_text(size=12),
+        plot.title=element_text(size=16, hjust=.5)) +
+  ggtitle("Between-Person Association of Extraversion and Mean Wellbeing Scores")
+
+# visualize wb fluctuations over time (to show between and within person variation)
+# library(lattice)
+# xyplot(wb ~ as.numeric(ESMg$start.time) | PID, data=CondA_long, type = c("p", "r"))
+
+
+```
+`
+

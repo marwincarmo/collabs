@@ -6,6 +6,7 @@ library(imputeTS)
 library(dplyr)
 library(ggplot2)
 library(stringr)
+library(rstan)
 
 # 1 Load in data ----------------------------------------------------------
 
@@ -43,25 +44,22 @@ sxd_imp <- sxd |>
                 ~imputeTS::na_kalman(.x, optim.control = 5000),
                 .names = "{.col}_imp")) |> 
   ungroup() |> 
-  select(Main.SubjectIDNum, obs_num, contains("_imp")) |>
-  rename_with(~str_remove(.x, "_imp"), contains("_imp")) |> 
-  mutate(id = as.numeric(as.factor(Main.SubjectIDNum)))
-
-
-
-
+  select(Main.SubjectIDNum, contains("_imp")) |>
+  rename_with(~str_remove(.x, "_imp"), contains("_imp")) #|>
+  #mutate(id = as.numeric(as.factor(Main.SubjectIDNum)))
 
 
 sxd_imp_std <- sxd_imp |> 
   dplyr::mutate(
-    dplyr::across(Headache:DontFeelRight, scale)
-  )
+           dplyr::across(Headache:DontFeelRight, ~scale(.x))
+         ) |>
+  dplyr::ungroup()
 
-sxd_imp %>%
-  group_by(Main.SubjectIDNum) %>%
-  summarize(has_duplicates = any(duplicated(obs_num))) |> 
-  dplyr::pull(has_duplicates) |> 
-  sum()
+## sxd_imp %>%
+##   group_by(Main.SubjectIDNum) %>%
+##   summarize(has_duplicates = any(duplicated(obs_num))) |>
+##   dplyr::pull(has_duplicates) |>
+##   sum()
 
 ## Look for zero variance
 sxd_imp |> 
@@ -75,8 +73,7 @@ sxd_imp |>
 
 # 4 mlVAR -----------------------------------------------------------------
 
-vars <- colnames(sxd_imp[,-c(1,2)])
-sxd_imp$obs_num <- 
+vars <- colnames(sxd_imp[,-c(1)])
 
 fit_mlvar <- mlVAR(data=sxd_imp, vars = vars, idvar = "id",
                    contemporaneous = "orthogonal", temporal = "orthogonal", estimator = "lmer")
@@ -173,54 +170,72 @@ centrality_mlvar <- function(fit,
 centrality_res <- centrality_mlvar(fit_mlvar)
 
 
+# 6 BmlVAR --------------------------------------------
 
-# Diagnostics -------------------------------------------------------------
+vars <- colnames(sxd_imp[,-c(1)])
 
-library(dplyr)
+stan_model <- rstan::stan_model(file = "scripts/mlvar_lkj.stan",
+                                model_name = "mlvar_lkj")
 
-# Define the variables in the model
-vars_in_model <- vars
+n_var <- length(vars)
 
-# Manually create a lagged dataset to see how many complete cases exist for a model
-usable_rows_count <- sxd_imp %>%
-  select(Main.SubjectIDNum, obs_num, all_of(vars_in_model)) %>%
-  arrange(Main.SubjectIDNum, obs_num) %>%
-  group_by(Main.SubjectIDNum) %>%
-  # Create lagged versions of all variables to simulate the predictors
-  mutate(across(all_of(vars_in_model), ~lag(.), .names = "{.col}_lag")) %>%
-  ungroup() %>%
-  # Drop the ID and time variables for counting
-  select(-Main.SubjectIDNum, -obs_num) %>%
-  # How many rows are complete across all original AND lagged variables?
-  filter(complete.cases(.)) %>%
-  nrow()
+# indicators for partial correlations
+idx_rho <- upper.tri(matrix(1, n_var, n_var, byrow = F)) |>
+      c() |>
+      which()
 
-cat("Total number of usable rows for the temporal models:", usable_rows_count, "\n")
+Y_scaled <- sxd_imp_std |>
+    dplyr::select(-c("Main.SubjectIDNum")) |>
+    as.matrix()
 
-library(dplyr)
+Y <- sxd_imp_std |>
+    dplyr::select(-c("Main.SubjectIDNum")) |>
+    as.matrix()
 
-# Define your study's structure
-beeps_per_day <- 3
-total_days <- 7
-required_obs <- beeps_per_day * total_days # Should be 21
+# obtain number of time points per person
+n_tp <- sxd_imp_std |>
+  group_by(Main.SubjectIDNum) |>
+  count() |>
+  pull(n)
 
-# Create day/beep columns and filter for complete subjects
-sxd_filtered_complete <- sxd %>%
-  mutate(
-    day  = ((obs_num - 1) %/% beeps_per_day) + 1,
-    beep = ((obs_num - 1) %% beeps_per_day) + 1
-  ) %>%
-  group_by(Main.SubjectIDNum) %>%
-  filter(n() == required_obs) %>%
-  ungroup()
+n_id <- length(unique(sxd_imp_std$Main.SubjectIDNum))
 
-# --- Verification ---
-# You can check the results to see how many subjects were kept
+# Prepare stan data
+stan_data_scaled <- list(
+    K = n_var,
+    I = n_id,
+    N_total = nrow(sxd_imp_std),
+    n_t = n_tp,
+    n_pc = n_var * (n_var - 1) / 2,
+    idx_rho = array(idx_rho, dim = length(idx_rho)),
+    Y = Y_scaled,
+    sparsity = 2,
+    mean_center = 0
+)
 
-# Original number of subjects
-cat("Original number of subjects:", n_distinct(sxd$Main.SubjectIDNum), "\n")
+# perform mean-centering within Stan
+stan_data <- list(
+    K = n_var,
+    I = n_id,
+    N_total = nrow(sxd_imp_std),
+    n_t = n_tp,
+    n_pc = n_var * (n_var - 1) / 2,
+    idx_rho = array(idx_rho, dim = length(idx_rho)),
+    Y = Y/20,
+    sparsity = 2,
+    mean_center = 1
+)
 
-# Number of subjects with complete data (21 observations)
-cat("Subjects with complete data:", n_distinct(sxd_filtered_complete$Main.SubjectIDNum), "\n")
-
-plot(fit_mlvar, type = "temporal")
+fit_bmlvar_centered <- rstan::sampling(
+    object = stan_model,
+    pars = c("Beta", "Sigma", "Rho", "Beta_in_strength", "Beta_out_strength", "Rho_strength", "Beta_density", "Rho_density"), # Explicitly include desired outputs
+    include = TRUE, # Now we are including *only* these
+    data = stan_data,
+    chains = 4,
+    cores = 8,
+    warmup =500,
+    iter = 2500,
+    init = 0,
+    control = list(adapt_delta = 0.99),
+    verbose = FALSE
+)
