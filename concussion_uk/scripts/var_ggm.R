@@ -96,7 +96,11 @@ for (id in unique_ids) {
   
     # Store the result in the list with id as the name
     results_list[[as.character(id)]] <- result
+<<<<<<< HEAD
 
+=======
+  
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
     # Remove the intermediate object to free up memory
     rm(sub_df)
     gc() # Run garbage collection
@@ -145,8 +149,12 @@ estimate_var_ggm(failed)
 
 raw_data |> 
   dplyr::filter(subject_id %in% failed,
+<<<<<<< HEAD
                # concussion == 1
                 ) |> 
+=======
+                concussion == 1) |> 
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
   dplyr::with_groups(subject_id, dplyr::summarise, n = dplyr::n()) |> 
   dplyr::arrange(desc(n)) |> 
   print(n = Inf)

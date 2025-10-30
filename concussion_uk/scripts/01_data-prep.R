@@ -152,7 +152,11 @@ for (i in symptoms) {
   PCSimputed_z[new_name] <- PCSimputed_z[i] - PCSimputed_z[mean_name]
 }
 
+<<<<<<< HEAD
 # Transforming back into mids file.
+=======
+# Turning back into mids file.
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
 ## Entire sample
 PCSimputed_z_mids <- mice::as.mids(
   PCSimputed_z[, !(names(PCSimputed_z) %in% c("subject_id", "concussion", "measurement"))], 

@@ -138,14 +138,22 @@ roll_your_own2 <- function(object,
     
     sel <- BGGM::select(object, cred = cred)
     adj <- if("var_estimate" %in% class(object)) {
+<<<<<<< HEAD
       sel$beta_adj
+=======
+      sel$pcor_adj
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
     } else {
       sel$adj
       }
     
   } else {
     
+<<<<<<< HEAD
     p <- ncol(object$beta_mu)
+=======
+    p <- ncol(object$pcor_mat)
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
     adj <- matrix(1, p, p)
     
   }
@@ -157,7 +165,11 @@ roll_your_own2 <- function(object,
   }
   
   pcors <- if("var_estimate" %in% class(object)) {
+<<<<<<< HEAD
     object$fit$beta[,,51:(object$iter +50)]
+=======
+    object$fit$pcors[, , 51:(iter + 50)]
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
   } else {
     object$post_samp$pcors[, , 51:(iter + 50)]
   }

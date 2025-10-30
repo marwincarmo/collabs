@@ -41,7 +41,7 @@ packageVersion("lme4")
 
 ```{r CSVs}
 #load in most recent csv's 
-ESM <- read_csv("/Users/Stephen.Raynes/Downloads/ESM.Clean.Nov2022.csv")
+ESM <- read_csv("ESM.Clean.Nov2022.csv")
 
 #remove extra column this creates which gets annoying later on
 ESM <- subset(ESM, select = -c(...1))

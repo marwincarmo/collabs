@@ -19,12 +19,12 @@ library("corrplot")
 
 ```{r CSVs}
 #load in most recent csv's 
-Pre <- read_csv("/Users/arthurraynes/Downloads/ESM+Pre-Survey_November+30,+2022_17.43.csv")
+Pre <- read_csv("ESM+Pre-Survey_November+30,+2022_17.43.csv")
 
-Instruction <- read_csv("/Users/arthurraynes/Downloads/INSTRUCTION 2.csv")
-Corpus <- read_csv("/Users/arthurraynes/Downloads/Corpus 6.csv")
+Instruction <- read_csv("INSTRUCTION 2.csv")
+Corpus <- read_csv("Corpus 6.csv")
 
-Post <- read_csv("/Users/arthurraynes/Downloads/ESM+Post-Survey_November+30,+2022_17.46.csv")
+Post <- read_csv("ESM+Post-Survey_November+30,+2022_17.46.csv")
 
 ```
 
@@ -916,7 +916,7 @@ length(ESM$PID)
 ```{r Publish CSV}
 
 
-write.csv(ESM, "/Users/arthurraynes/Downloads/ESM.Clean.Nov2022.csv")
+write.csv(ESM, "ESM.Clean.Nov2022.csv")
 
 
 ```

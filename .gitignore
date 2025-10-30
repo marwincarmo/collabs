@@ -4,6 +4,7 @@
 .httr-oauth
 .DS_Store
 .quarto
+<<<<<<< HEAD
 results.rds
 out/network_orthogonal.RData
 # Ignore only specific large files
@@ -13,3 +14,5 @@ concussion_uk/out/strength_within.rds
 concussion_uk/out/imputed_datasets/PCSimputed_z_mids1.rds
 concussion_uk/out/strength_within_concussion.rds
 concussion_uk/out/
+=======
+>>>>>>> 7d7a1b4dd172fa11ed2e6aa75aab525f505087f0
