@@ -3,11 +3,16 @@
 library(lme4)
 library(dplyr)
 library(readr)
+library(purrr)
+library(future)
+library(furrr)
+library(ggplot2)
 library(mediation)
+source("R/sim_main.R") # load the simulation function
 
-## 1 Load and prepare data ------------------------------
+## 1 Load and prepare data -------------------------------
 
-esm <- readr::read_csv("ESM.Clean.Nov2022.csv")
+esm <- readr::read_csv("osfstorage-archive/ESM.Clean.Nov2022.csv")
 
 ## person-mean centering
 esm_pc <- esm |>
@@ -32,8 +37,7 @@ esm_pc <- esm |>
                                     activity == 6 ~ "Other",
                                     .default = NA
                                   ),
-                attention  = ifelse(attention == 1, 1, -1)
-                #attention = ifelse(attention == 1, "Present", "Not Present")
+                attention  = factor(ifelse(attention == 1, "Present", "MW"))
                 ) |>
   ## Person-mean centering (from chunk 'Person mean centering')
   dplyr::group_by(PID) |>
@@ -51,7 +55,20 @@ esm_pc <- esm |>
            clarity_all_cw2 = clarity_all - clarity_all_mean2,
            valence_all_cw2 = valence_all - valence_all_mean2,
            reaction_all_cw2 = reaction_all - reaction_all_mean2,
-           interesting_all_cw2 = interesting_all - interesting_all_mean2)
+           interesting_all_cw2 = interesting_all - interesting_all_mean2,
+           ## Grand mean centered variables
+           wb_c2 = scale(wb, center = T, scale = F),
+           clarity_all_c2 = scale(clarity_all, center = T, scale = F),
+           valence_all_c2 = scale(valence_all, center = T, scale = F),
+           reaction_all_c2 = scale(reaction_all, center = T, scale = F),
+           interesting_all_c2 = scale(interesting_all, center = T, scale = F),
+           ## Betwee-person centered variables
+           wb_cb2 = wb_c2-wb_cw2,
+           clarity_all_cb2 = clarity_all_c2-clarity_all_cw2,
+           valence_all_cb2 = valence_all_c2-valence_all_cw2,
+           reaction_all_cb2 = reaction_all_c2-reaction_all_cw2,
+           interesting_all_cb2 = interesting_all_c2-interesting_all_cw2
+         )
 
 ## Create the "Inner Speech" only dataset (from chunk 'Inner speech datasets')
 esm_inner <- esm_pc |>
@@ -61,217 +78,156 @@ esm_inner <- esm_pc |>
 ## Note: The paper and script chunk 'As individual MLMs' use -1/1 coding.
 ## But the final mediation chunk 'With covariates' uses as.factor(). We MUST follow
 ## the final mediation chunk for our power analysis.
-esm_inner$attention <- as.factor(esm_inner$attention)
+#esm_inner$attention <- as.factor(esm_inner$attention)
+contrasts(esm_inner$attention) <- contr.sum(2)
 
-## 3 Fit the two key models from the script
+## Get prompt counts for variable-prompt simulation
+prompt_counts <- esm_inner |>
+  dplyr::count(PID) |>
+  dplyr::pull(n)
+
+
+## 2 Fit the two key models from the script --------------
 
 ## Main hypothesis: Is Thought Valence more negative when people
 ## are mind wandering versus present?
 
-## Table 3 - left panel
+## Table 3 - left panel ------------------------------------
 
 ## These are from the chunk 'With covariates' under '##Model 2: Mediation of Valeince'
 
-model1a_fit <- lmer(formula = wb_cw2 ~ activity + clarity_all_cw2+ #as a covariate
-                    interesting_all_cw2 + attention+ (1|PID),
-                    data = esm_inner,
-                   REML = FALSE) #must set this to F to return loglik and AIC
-summary(model1a_fit)
+model1a_fit <- lmerTest::lmer(formula = wb ~ activity + clarity_all_cw2 +
+                    interesting_all_cw2 + attention + (1|PID),
+                    data = esm_inner, REML = FALSE)
+b_main_1a <- summary(model1a_fit)$coefficients[,"Estimate"]
+vc_1a <- as.data.frame(VarCorr(model1a_fit))
+sd_u0_1a <- vc_1a[1, "sdcor"]
+sd_e_1a  <- vc_1a[2, "sdcor"]
+
 ## Model a: Mediator model (Valence ~ Attention + Covariates)
 ## (Corresponds to 'fit.mediator1' in the script)
 ## Does Attention State predict  Thought Valence (Mediator)?
 
-fit_mediator <- lme4::lmer(
-  valence_all_cw2 ~ attention + activity + clarity_all_cw2 + interesting_all_cw2 + (1 | PID),
-  data = esm_inner
-)
-summary(fit_mediator)
-## Model b: Outcome model (Mood ~ Attention + Valence + Covariates)
-## (Corresponds to 'fit.dv1' in the script)
-fit_outcome <- lme4::lmer(
-                       wb ~ attention + valence_all_cw2 +
-                         activity + clarity_all_cw2 + interesting_all_cw2 + (1 | PID),
-  data = esm_inner
-)
+## Table 3 reports  the coefficient for attention as 0.20. This value is only obtained
+## when attention is not transformed to factor. However, according to their analysis plan,
+## attention should be coded as Present(2) = 1, and Mind wandering(1) = -1
 
-# --- 0. Load required libraries ---
-library(lme4)
-library(mediation)
-library(dplyr)
-library(purrr)     # For iteration
-library(ggplot2)   # For plotting
+## Table 3 - right panel -----------------------------------
 
-# --- !!! IMPORTANT !!! ---
-# You MUST have the 'esm_inner' dataframe from our Step 1 script
-# in your R environment for this to work. The simulation
-# samples from it to create realistic covariates.
-#
-# If you don't have it, please run this part of your script again:
-#
-# esm_pc <- ... (all your dplyr data prep)
-# esm_inner <- esm_pc |> dplyr::filter(inner_speech == 0)
-# esm_inner$attention <- as.factor(esm_inner$attention)
-#
-# ---
+## This model is not in the original script, but corresponds to the results
+## shown in the righ-hand panel of Table 3.
+## The original analysis script shows a model fit.dv1 that contains
+## within-person-centered valence, but the outcome is within-person
+## centered well-beign, which deviates from the model shown in the paper
 
-# --- 1. Define Ground Truth Parameters ---
-# (Extracted from your summary() outputs)
+model1b_fit <- lmerTest::lmer(formula = wb ~ activity + clarity_all_cw2 +
+                         interesting_all_cw2 + attention + valence_all_cw2 + (1|PID),
+                       data = esm_inner, REML = FALSE)
+b_main_1b <- summary(model1b_fit)$coefficients[,"Estimate"]
+vc_1b <- as.data.frame(VarCorr(model1b_fit))
+sd_u0_1b <- vc_1b[1, "sdcor"]
+sd_e_1b  <- vc_1b[2, "sdcor"]
 
-# Model A (Mediator) Fixed Effects
-b_med <- list(
-  "(Intercept)" = -0.28529,
-  attention1 = 0.11700,
-  activityHousehold = 0.09521,
-  activityOther = -0.14934,
-  activityPhysical = 0.21010,
-  activityRestful = 0.09941,
-  activitySocial = 0.21218,
-  clarity_all_cw2 = 0.08972,
-  interesting_all_cw2 = 0.15971
-)
-# Model A Residual SD
-sd_med_resid <- 1.064
+## Moderation model ----------------------------------------
+## code extracted from original script
 
-# Model B (Outcome) Fixed Effects
-b_out <- list(
-  "(Intercept)" = -0.227307,
-  attention1 = 0.117671,
-  valence_all_cw2 = 0.597218,
-  activityHousehold = 0.059135,
-  activityOther = 0.004509,
-  activityPhysical = 0.102689,
-  activityRestful = 0.116552,
-  activitySocial = 0.179922,
-  clarity_all_cw2 = 0.025502,
-  interesting_all_cw2 = 0.071591
-)
-# Model B Residual SD
-sd_out_resid <- 0.9444
+fit.totaleffect1 <- lme4::lmer(wb_cw2 ~ attention + (1|PID)
+                               + activity+ clarity_all_cw2 + interesting_all_cw2 #covariate
+                             , data=esm_inner)
+summary(fit.totaleffect1) #estimate of attention = total effect; IV to DV line; .19, p<.001
 
-# Sample structure from original data
-j_prompts <- 13 # Avg prompts (13.2 in original, we'll use 13)
+Anova(fit.totaleffect1, type=3)
+
+fit.mediator1<- lme4::lmer(valence_all_cw2 ~ attention + (1|PID)
+                           +activity+ clarity_all_cw2+ interesting_all_cw2   #covariate
+                         , data=esm_inner)
+summary(fit.mediator1) #effect of IV onto mediator; IV to Mediator line; .12, p<.001
+Anova(fit.mediator1, type=3)
+
+fit.dv1 <- lme4::lmer(wb_cw2 ~ attention + valence_all_cw2 + (1|PID)
+                      + activity+ clarity_all_cw2 + interesting_all_cw2 #covariate
+                    , data=esm_inner)
+summary(fit.dv1) #effect of mediator on DV; Mediator to DV line (ignore IV here); .60
+                                        #since IV is still sig here, we say it's a partial meditation as opposed to a complete mediation
+Anova(fit.dv1, type=3)
 
 
-# --- 2. Define the Simulation Function ---
+results1<-mediation::mediate(fit.mediator1, fit.dv1, treat='attention',
+                            mediator='valence_all_cw2',
+              covariates =  c("activity", "clarity_all_cw2", "interesting_all_cw2"),  #NEW
+                            na.action="na.omit")
+summary(results1)
 
-#' Runs a single iteration of the mediation simulation
-#'
-#' @param N Number of participants to simulate
-#' @param j Number of prompts per participant
-#' @param esm_inner_orig The original `esm_inner` dataframe to sample covariates from
-#'
-#' @return A data.frame with the p-value for the ACME (indirect effect)
-run_sim_iteration <- function(N, j, esm_inner_orig) {
+## Data inspection
 
-  # 1. Create participant and prompt structure
-  sim_data <- data.frame(
-    PID = rep(1:N, each = j)
-  )
-  n_total_obs <- N * j
+esm_sub <- esm_inner |>
+  dplyr::select(wb, activity, clarity_all_cw2,
+                interesting_all_cw2, attention, valence_all_cw2)
 
-  # 2. Simulate covariates by resampling from the original data
-  # This is the easiest way to preserve their distributions and correlations
-  covariate_indices <- sample(1:nrow(esm_inner_orig), size = n_total_obs, replace = TRUE)
+GGally::ggpairs(esm_sub)
 
-  sim_data$attention <- esm_inner_orig$attention[covariate_indices]
-  sim_data$activity <- esm_inner_orig$activity[covariate_indices]
-  sim_data$clarity_all_cw2 <- esm_inner_orig$clarity_all_cw2[covariate_indices]
-  sim_data$interesting_all_cw2 <- esm_inner_orig$interesting_all_cw2[covariate_indices]
+## 3 Run the simulation --------------------------------------
 
-  # We must re-level the factor to match the model's coefficients
-  sim_data$activity <- factor(sim_data$activity,
-                              levels = c("Cognitive", "Household", "Other",
-                                         "Physical", "Restful", "Social"))
+## Define simulation parameters
+N_to_test <- c(50, 75, 100, 125, 150, 175, 200)
+n_sims <- 300
+set.seed(1234)
 
-  # 3. Simulate Mediator (Valence)
-  # Create a model matrix to easily calculate predicted values
-  X_med <- model.matrix(~ attention + activity + clarity_all_cw2 + interesting_all_cw2, data = sim_data)
+plan(multisession, workers = availableCores() - 1)
 
-  # Get the beta coefficients in the correct order
-  b_med_vec <- unlist(b_med[colnames(X_med)])
+## Model 1a ----
+sim1a <- furrr::future_map_dfr(N_to_test, ~{
+  n = .x
+  purrr::map(1:n_sims, ~run_sim_main(
+                         N = n,
+                         esm_inner_orig = esm_inner,
+                         prompt_counts_orig = prompt_counts,
+                         beta_attention_ratio = 1,
+                         use_variable_prompts = TRUE,
+                         attrition_rate = 0.0,
+                         model_type = "model1a"
+  )) |>  purrr::list_rbind()
+}, .options = furrr_options(seed = TRUE))
 
-  # Calculate predicted mediator value (mu)
-  mu_med <- X_med %*% b_med_vec
+## Model 1b -----
+sim1b <- furrr::future_map_dfr(N_to_test, ~{
+  n = .x
+  purrr::map(1:n_sims, ~run_sim_main(
+                         N = n,
+                         model_type = "model1b",
+                         esm_inner_orig = esm_inner,
+                         prompt_counts_orig = prompt_counts,
+                         beta_attention_ratio = 0.75,
+                         use_variable_prompts = TRUE,
+                         attrition_rate = 0.3
+  )) |>  purrr::list_rbind()
+}, .options = furrr_options(seed = TRUE))
 
-  # Add residual error
-  sim_data$sim_med <- mu_med + rnorm(n_total_obs, mean = 0, sd = sd_med_resid)
+## 4 Calculate and Plot Power Curve ------------------------
 
-  # 4. Simulate Outcome (Mood)
-  # Create model matrix for the outcome model
-  X_out <- model.matrix(~ attention + sim_med + activity + clarity_all_cw2 + interesting_all_cw2, data = sim_data)
+power_1a <- sim1a |>
+  dplyr::group_by(N) |>
+  dplyr::summarise(power = mean(p.value < 0.05, na.rm = TRUE)) |>
+  dplyr::mutate(Scenario = "Model 1a (Attention Only)")
 
-  # Get betas in the correct order (note 'sim_med' replaces 'valence_all_cw2')
-  b_out_vec <- unlist(b_out[colnames(X_out)])
-  names(b_out_vec)[names(b_out_vec) == "valence_all_cw2"] <- "sim_med" # align names
+power_1b <- sim1b |>
+  dplyr::group_by(N) |>
+  dplyr::summarise(power = mean(p.value < 0.05, na.rm = TRUE)) |>
+  dplyr::mutate(Scenario = "Model 1b (Attention, given Valence)")
 
-  # Calculate predicted outcome value (mu)
-  mu_out <- X_out %*% b_out_vec
 
-  # Add residual error
-  sim_data$sim_out <- mu_out + rnorm(n_total_obs, mean = 0, sd = sd_out_resid)
+all_power_curves <- dplyr::bind_rows(power_1a, power_1b)
 
-  # 5. Run the authors' exact (singular) analysis
-  # We use lmer() even though Var=0 to perfectly replicate their workflow
-  suppressMessages({ # Suppress singular fit warnings
-    fit_med_sim <- lmer(sim_med ~ attention + activity + clarity_all_cw2 + interesting_all_cw2 + (1 | PID),
-                        data = sim_data)
-
-    fit_out_sim <- lmer(sim_out ~ attention + sim_med + activity + clarity_all_cw2 + interesting_all_cw2 + (1 | PID),
-                        data = sim_data)
-  })
-
-  # 6. Run mediation test
-  # Using sims=100 for speed. Increase to 1000 for final, more stable results.
-  med_results <- suppressMessages(
-    mediation::mediate(fit_med_sim, fit_out_sim,
-                       treat = 'attention', mediator = 'sim_med',
-                       sims = 100)
-  )
-
-  # 7. Return the p-value for the indirect effect (ACME)
-  return(data.frame(
-    N = N,
-    p.value = summary(med_results)$ACME.avg.p
-  ))
-}
-
-# --- 3. Run the Simulation (Step 3) ---
-
-# Define your simulation parameters
-N_to_test <- c(100, 150, 200, 250, 300, 350, 400) # Sample sizes to check
-n_sims <- 500 # Number of iterations per sample size
-              # START WITH 100-500. Run 1000+ for your final paper.
-
-# This may take several minutes!
-set.seed(123) # For reproducible results
-simulation_results <- purrr::map_dfr(N_to_test, ~{
-  cat("Simulating N =", .x, "\n")
-  purrr::rerun(n_sims, run_sim_iteration(N = .x, j = j_prompts, esm_inner_orig = esm_inner)) %>%
-    purrr::list_rbind()
-})
-
-# --- 4. Calculate and Plot Power Curve (Step 4) ---
-
-# Calculate power (proportion of p < .05) for each sample size
-power_curve <- simulation_results %>%
-  group_by(N) %>%
-  summarise(
-    power = mean(p.value < 0.05, na.rm = TRUE)
-  )
-
-print(power_curve)
-
-# Plot the power curve
-ggplot(power_curve, aes(x = N, y = power)) +
-  geom_line(linewidth = 1, color = "blue") +
-  geom_point(size = 3, color = "blue") +
+# Plot
+ggplot(all_power_curves, aes(x = N, y = power, color = Scenario, group = Scenario)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
   geom_hline(yintercept = 0.80, linetype = "dashed", color = "red") +
   scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(
-    title = "Power Analysis for Mediation Effect",
-    subtitle = "Replicating Gross et al. (2025) Analysis",
-    x = "Number of Participants (N)",
-    y = "Power to Detect Indirect Effect (p < .05)",
-    caption = paste(n_sims, "simulations per point")
+    title = "Power Analysis for Main Attention Effects",
+    x = "Number of Participants Recruited (N)",
+    y = "Power (p < .05)",
+    color = "Analysis Scenario"
   ) +
   theme_minimal()
