@@ -59,11 +59,21 @@ Recoding matches against the survey's own option list rather than typed-out
 strings, and each recode prints a raw-label × value table plus a check that
 nothing became `NA`.
 
-**`attention1` is half the Present − MW difference.** `contr.sum(2)` puts +1 on
-the first level, and `00_setup.R` sets `c("Present", "MW")` so the coefficient is
-positive in the direction H1 predicts. `R/power/` let the levels sort
-alphabetically, which gives the opposite sign — the two are not comparable.
-Scripts 05 and 07 report the doubled difference explicitly.
+**Attention state is split within/between, and that is a deviation.** H1 and H2
+are within-person claims, but a random intercept does not absorb the
+between-person part of a level-1 predictor. `04_derive.R` therefore builds
+`att_cw2` (within) and `att_cb2` (between) from a 0/1 `att_num`, and both enter
+every H1/H2 model. `att_cw2` is the **full** Present − MW difference — nothing to
+double. In the pilot the split gives +0.526 where Gross's raw coding gives
++0.894, the gap being a between-person effect of +1.215. Gross's own two codings
+(raw `attention`, and `wb_cw2` as the outcome) are kept as sensitivity rows in
+07. `docs/deviations.md` §13 has the reasoning and the numbers.
+
+**`attention1` is half the Present − MW difference**, where it still appears.
+`contr.sum(2)` puts +1 on the first level, and `00_setup.R` sets
+`c("Present", "MW")` so the coefficient is positive in the direction H1 predicts.
+`R/power/` let the levels sort alphabetically, which gives the opposite sign —
+the two are not comparable. Every script that prints it doubles it explicitly.
 
 **The instrument differs from Gross's in ways that matter.** There is no
 no-inner-speech branch (so person-mean centring uses a different base), no
@@ -107,6 +117,12 @@ paths, unlike everything in `R/`.
 ## Status
 
 Data collection is not finished. The current numbers come from 95 participants
-with a median of one inner-speech prompt each, which is why the mediation chain
-reports singular fits. The specifications are fixed in `00_setup.R` and the
-sensitivity table reports alternatives rather than choosing among them.
+with a median of one inner-speech prompt each — 48 of the 95 have exactly one,
+so they carry no within-person information and H1 rests on the other 47. The
+specifications are fixed in `00_setup.R` and 05, and the sensitivity table
+reports alternatives rather than choosing among them.
+
+The mediation chain no longer reports singular fits. It used to, because it
+followed Gross in person-mean centring the outcome, which leaves `(1 | PID)`
+with no variance to estimate — a property of the specification, not of the
+sample size. See `docs/deviations.md` §13.

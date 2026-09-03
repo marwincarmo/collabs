@@ -64,10 +64,44 @@ d <- d |>
     interesting_cb2 = interesting_c2 - interesting_cw2
   )
 
+## -- Attention state, decomposed the same way --------------------------------
+## `att_num` is 1 at a Present prompt and 0 at a Mind-Wandering one, so `att_cw2`
+## carries the FULL Present-minus-MW difference within a person. No doubling,
+## unlike the contr.sum coding set up below.
+##
+## Why bother, when there is already a random intercept: `(1 | PID)` does not
+## remove the between-person part of a level-1 predictor. Attention entered raw
+## gives a precision-weighted blend of the within- and between-person effects
+## (Neuhaus & Kalbfleisch, 1998; Enders & Tofighi, 2007; Curran & Bauer, 2011).
+## Splitting it is what makes the H1 coefficient a within-person quantity, which
+## is what the hypothesis is about. See docs/deviations.md 13.
+
+d <- d |>
+  mutate(att_num = as.numeric(attention == "Present")) |>
+  group_by(PID) |>
+  mutate(att_mean2 = mean(att_num, na.rm = TRUE)) |>
+  ungroup() |>
+  mutate(
+    att_cw2 = att_num - att_mean2,                        # within-person
+    att_c2  = att_num - mean(att_num, na.rm = TRUE),      # grand-mean centred
+    att_cb2 = att_c2 - att_cw2                            # between-person
+  )
+
+
 cat("\n-- centring checks ---------------------------------------------------\n")
 cat("largest person-mean of wb_cw2 (should be ~0):",
     max(abs(tapply(d$wb_cw2, d$PID, mean, na.rm = TRUE)), na.rm = TRUE), "\n")
 cat("_c2 equals _cw2 + _cb2:", isTRUE(all.equal(d$wb_c2, d$wb_cw2 + d$wb_cb2)), "\n\n")
+
+## A participant with a single prompt has att_cw2 exactly 0: their one prompt IS
+## their mean. They therefore contribute nothing to the within-person slope while
+## still informing the intercept and the variance components -- which is the
+## right treatment. Under a person-mean-centred OUTCOME they are not neutral but
+## actively harmful, contributing a zero outcome against a varying predictor.
+n_single <- sum(table(d$PID)[as.character(d$PID)] == 1)
+cat("single-prompt rows:", n_single, "of", nrow(d),
+    "-- att_cw2 exactly 0 for all of them:",
+    all(d$att_cw2[table(d$PID)[as.character(d$PID)] == 1] == 0), "\n\n")
 print(summary(d[c("wb", "wb_cw2", "clarity_cw2", "valence_cw2", "interesting_cw2")]))
 
 
@@ -109,8 +143,8 @@ d <- d |>
 
 cat("\n-- analysis data -----------------------------------------------------\n")
 cat(nrow(d), "prompts,", nlevels(d$PID), "participants\n\n")
-print(d |> select(PID, day, attention, wb, wb_cw2, clarity_cw2, valence_cw2,
-                  interesting_cw2, activity), n = 6)
+print(d |> select(PID, day, attention, att_cw2, att_cb2, wb, clarity_cw2,
+                  valence_cw2, interesting_cw2, activity), n = 6)
 
 saveRDS(d, file.path(dir_derived, "04_analysis.rds"))
 cat("\nSaved:", file.path(dir_derived, "04_analysis.rds"), "\n")

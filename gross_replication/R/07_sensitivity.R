@@ -1,16 +1,31 @@
 ## -----------------------------------------------------------------------------
 ## 07  Does the H1 result depend on the choices we had to make?
 ##
-## Each variant changes ONE setting from 00_setup.R, then re-runs 03 and 04 with
-## it and refits. The primary specification is fixed in 00_setup.R and does not
-## change on the basis of what this table says -- the point is to report the
-## alternatives, not to pick among them.
+## Two kinds of choice are varied here, and they are independent of each other.
 ##
-## The three models per variant:
-##   Model A / Model B  -- outcome is raw mood
-##   Total effect       -- outcome is wb_cw2, the model the mediation chain uses
-## The centring variant only moves the third one, because it is the only model
-## whose outcome is person-mean centred.
+## 1. DATA CONSTRUCTION -- one setting from 00_setup.R per row of `variants`.
+##    03 and 04 are re-run with it before refitting.
+##
+## 2. HOW ATTENTION ENTERS -- four specifications, fitted for every variant.
+##    This is the axis that matters most, and the one where this analysis
+##    departs from Gross et al. See docs/deviations.md 13 and the header of 05.
+##
+##      Model A / Model B    within/between split. att_cw2 is the within-person
+##                           Present-minus-MW difference. PRIMARY.
+##      Blended              attention entered raw with contr.sum, as in Gross's
+##                           Table 3. The random intercept does not absorb the
+##                           between-person part, so this is a blend of the
+##                           within and between effects.
+##      Centred outcome      wb_cw2 as the outcome, as in Gross's mediation
+##                           chain. Isolates the within effect but zeroes the
+##                           random-intercept variance, so it is singular by
+##                           construction, and single-prompt participants
+##                           contribute a zero outcome against a varying
+##                           predictor. Reported, not used.
+##
+## The primary specification is fixed in 00_setup.R and 05, and does not change
+## on the basis of what this table says -- the point is to report the
+## alternatives, not to pick among them.
 ## -----------------------------------------------------------------------------
 
 source("R/00_setup.R")
@@ -25,6 +40,18 @@ variants <- tribble(
   "Prompt-level effort screen",             2L,  TRUE, "inner_speech",  18L, TRUE,
   "No age screen",                          2L,  TRUE, "inner_speech",   0L, FALSE
 )
+
+## label, formula, the coefficient to read, and whether it needs doubling.
+## contr.sum puts +1 on Present, so `attention1` is HALF the difference;
+## att_num is 0/1, so `att_cw2` is already the whole of it.
+specs <- tribble(
+  ~model,            ~rhs,                                             ~term,        ~double,
+  "Model A",         "att_cw2 + att_cb2",                              "att_cw2",      FALSE,
+  "Model B",         "att_cw2 + att_cb2 + valence_cw2",                "att_cw2",      FALSE,
+  "Blended",         "attention",                                      "attention1",   TRUE,
+  "Centred outcome", "attention",                                      "attention1",   TRUE
+)
+specs$lhs <- c("wb", "wb", "wb", "wb_cw2")
 
 results <- list()
 
@@ -47,33 +74,31 @@ for (i in seq_len(nrow(variants))) {
 
   dv <- readRDS(file.path(dir_derived, "04_analysis.rds"))
 
-  fits <- list(
-    "Model A"      = lmer(wb ~ attention + activity + clarity_cw2 + interesting_cw2 +
-                            (1 | PID), data = dv, REML = v$reml),
-    "Model B"      = lmer(wb ~ attention + activity + clarity_cw2 + interesting_cw2 +
-                            valence_cw2 + (1 | PID), data = dv, REML = v$reml),
-    "Total effect" = lmer(wb_cw2 ~ attention + activity + clarity_cw2 +
-                            interesting_cw2 + (1 | PID), data = dv, REML = v$reml)
-  )
+  for (j in seq_len(nrow(specs))) {
+    sp <- specs[j, ]
+    f  <- as.formula(paste(sp$lhs, "~", sp$rhs,
+                           "+ activity + clarity_cw2 + interesting_cw2 + (1 | PID)"))
+    m  <- lmer(f, data = dv, REML = v$reml)
+    co <- summary(m)$coefficients[sp$term, ]
+    k  <- if (sp$double) 2 else 1
 
-  for (nm in names(fits)) {
-    co <- summary(fits[[nm]])$coefficients["attention1", ]
     results[[length(results) + 1]] <- tibble(
       variant      = v$label,
-      model        = nm,
+      model        = sp$model,
       participants = nlevels(dv$PID),
       prompts      = nrow(dv),
-      ## reported as the full Present - MW difference, i.e. twice the coefficient
-      present_minus_mw = 2 * co["Estimate"],
-      ci_low           = 2 * (co["Estimate"] - 1.96 * co["Std. Error"]),
-      ci_high          = 2 * (co["Estimate"] + 1.96 * co["Std. Error"]),
+      ## always reported as the full Present - MW difference
+      present_minus_mw = k * co["Estimate"],
+      ci_low           = k * (co["Estimate"] - 1.96 * co["Std. Error"]),
+      ci_high          = k * (co["Estimate"] + 1.96 * co["Std. Error"]),
       p                = co["Pr(>|t|)"],
-      singular         = isSingular(fits[[nm]])
+      singular         = isSingular(m)
     )
-    cat(sprintf("  %-13s Present - MW = %+.3f [%+.3f, %+.3f]  p = %.4f\n",
-                nm, 2 * co["Estimate"],
-                2 * (co["Estimate"] - 1.96 * co["Std. Error"]),
-                2 * (co["Estimate"] + 1.96 * co["Std. Error"]), co["Pr(>|t|)"]))
+    cat(sprintf("  %-16s Present - MW = %+.3f [%+.3f, %+.3f]  p = %.4f%s\n",
+                sp$model, k * co["Estimate"],
+                k * (co["Estimate"] - 1.96 * co["Std. Error"]),
+                k * (co["Estimate"] + 1.96 * co["Std. Error"]), co["Pr(>|t|)"],
+                if (isSingular(m)) "  SINGULAR" else ""))
   }
 }
 
@@ -81,6 +106,10 @@ sensitivity <- bind_rows(results)
 
 cat("\n---- All specifications ----------------------------------------------\n")
 print(as.data.frame(sensitivity), digits = 3, row.names = FALSE)
+
+cat("\nEvery 'Centred outcome' row is singular. That is the specification, not",
+    "the data:\nperson-mean centring the outcome leaves (1 | PID) nothing to",
+    "estimate.\n")
 
 ## Put the settings back, and rebuild the primary analysis data so the files on
 ## disk match 00_setup.R again rather than the last variant run above.

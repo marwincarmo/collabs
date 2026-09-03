@@ -62,14 +62,18 @@ for (i in seq_along(moderators)) {
   v     <- moderators[[i]]
   label <- names(moderators)[i]
 
+  ## The moderated term is the WITHIN-person attention effect, att_cw2, to match
+  ## the H1 specification in 05. att_cb2 stays in as a main effect so the split
+  ## is not undone. att_cw2 is 0/1 coded, so the interaction is the change in the
+  ## full Present-minus-MW difference per unit of the moderator.
   f <- as.formula(paste(
-    "wb ~ attention * ", v,
-    "+ activity + clarity_cw2 + interesting_cw2 + (1 | PID)"
+    "wb ~ att_cw2 * ", v,
+    "+ att_cb2 + activity + clarity_cw2 + interesting_cw2 + (1 | PID)"
   ))
   m <- lmer(f, data = d, REML = use_reml)
 
   co  <- summary(m)$coefficients
-  rows <- grep("attention1:", rownames(co), fixed = TRUE)
+  rows <- grep("att_cw2:", rownames(co), fixed = TRUE)
 
   cat("\n----", label, "-----------------------------------------------------\n")
   cat("formula:", deparse1(formula(m)), "\n\n")
