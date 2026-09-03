@@ -93,7 +93,10 @@ read_expiwell <- function(path) {
     column    = names(dat)[q_cols],
     n_options = vapply(choices, function(x) if (is.null(x)) NA_integer_ else length(x), integer(1)),
     type      = qtype[q_cols],
-    question  = str_trunc(qtext[q_cols], 70)
+    ## Kept whole. Some questions are very long -- the consent item is the
+    ## entire consent form, 5,500 characters -- so shorten them where they are
+    ## printed, not here.
+    question  = qtext[q_cols]
   )
 
   list(data = dat, choices = choices, codebook = codebook)

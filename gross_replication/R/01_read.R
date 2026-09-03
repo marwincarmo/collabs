@@ -14,12 +14,12 @@ esm_raw    <- read_expiwell(raw_esm_file)
 cat("\n---- Day-1 survey ----------------------------------------------------\n")
 cat(nrow(person_raw$data), "rows,",
     n_distinct(person_raw$data$`Participant ID`), "participants\n\n")
-print(person_raw$codebook, n = Inf)
+print(person_raw$codebook |> mutate(question = str_trunc(question, 70)), n = Inf)
 
 cat("\n---- ESM prompts -----------------------------------------------------\n")
 cat(nrow(esm_raw$data), "rows,",
     n_distinct(esm_raw$data$`Participant ID`), "participants\n\n")
-print(esm_raw$codebook, n = Inf)
+print(esm_raw$codebook |> mutate(question = str_trunc(question, 70)), n = Inf)
 
 ## The answer options, in the order the survey defines them. Recoding in 02
 ## relies on this order, so it is worth reading once.
